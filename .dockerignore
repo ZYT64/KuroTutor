@@ -1,0 +1,33 @@
+# ---- 绝不入镜像：密钥与运行时数据 ----
+kuro.json
+config.json
+data/
+*.db
+*.db-journal
+
+# ---- 本地环境 / 构建 / 训练产物 ----
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+runs/
+weights/
+kurotutor.egg-info/
+
+# 预构建 wheel 需要进镜像（Dockerfile 直接安装，绕开 BuildKit 内打包）
+!dist/
+dist/**
+!dist/*.whl
+
+# ---- 测试 / 文档 / 本地日志 ----
+tests/
+docs/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.log
+botpy.log
+scripts/

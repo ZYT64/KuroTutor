@@ -1,0 +1,43 @@
+# 运行时数据（含密钥配置、数据库、工作区、知识库）——禁止提交
+config.json
+kuro.json
+data/
+*.db
+*.db-journal
+*.sqlite3
+
+# 虚拟环境
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 构建产物
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# 测试与工具缓存
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# 编辑器
+.idea/
+.vscode/
+*.swp
+
+# 日志
+*.log
+logs/
+
+# Docker 预构建 wheel（可重新生成，不入库）
+dist/
+*.whl
+runs/
+weights/

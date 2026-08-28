@@ -1,0 +1,61 @@
+{
+  "name": "kurotutor",
+  "version": "0.1.0",
+  "workspace": "data/workspaces",
+  "data_dir": "data",
+  "channel": {
+    "app_id": "请填写QQ机器人app_id",
+    "secret": "请填写QQ机器人secret"
+  },
+  "models": {
+    "llm": {
+      "provider": "openai",
+      "model": "deepseek-v3",
+      "api_key": "请填写密钥",
+      "base_url": "https://api.deepseek.com/v1"
+    },
+    "vision": {
+      "provider": "openai",
+      "model": "qwen-vl-plus",
+      "api_key": "请填写密钥",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    },
+    "embedding": {
+      "provider": "openai",
+      "model": "text-embedding-v3",
+      "api_key": "请填写密钥",
+      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    },
+    "reranker": {
+      "provider": "openai",
+      "model": "bge-reranker-v2-m3",
+      "api_key": "请填写密钥"
+    },
+    "search": {
+      "provider": "bing",
+      "model": "",
+      "api_key": ""
+    }
+  },
+  "permissions": {
+    "shell": "deny",
+    "file_access": "workspace_only",
+    "model_endpoints": [
+      "https://api.deepseek.com",
+      "https://dashscope.aliyuncs.com"
+    ]
+  },
+  "kb": {
+    "vector_store": "sqlite-vec",
+    "path": "data/kb"
+  },
+  "paths": {
+    "skills_dir": "skills",
+    "plugins_dir": "plugins"
+  },
+  "server": {
+    "host": "0.0.0.0",
+    "port": 8000
+  },
+  "log_level": "info"
+}

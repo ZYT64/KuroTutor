@@ -1,0 +1,42 @@
+# KuroTutor Docker Compose —— 一键部署。
+#
+# 前置：把 kuro.example.json 复制为 kuro.json 并填好密钥（该文件严禁推到公开仓库）。
+#
+# 启动服务（QQ 机器人 + 调度推送）：
+#   docker compose up -d --build
+# 看日志：
+#   docker compose logs -f kuro
+# 执行管理命令（CLI 无 WebUI，全部走这里），例如：
+#   docker compose run --rm cli kuro student list
+#   docker compose run --rm cli kuro doctor
+#   docker compose run --rm cli kuro export wrongbook <学生>
+#
+# 树莓派 / arm64 服务器：本机 docker buildx 默认架构即可（依赖均有 arm64 轮子）。
+
+services:
+  kuro:
+    build:
+      context: .
+    image: kurotutor:latest
+    container_name: kurotutor
+    restart: unless-stopped
+    volumes:
+      # 配置只读挂载（含密钥，严禁提交/外传）；数据（数据库/工作区/知识库/错题导出）持久化
+      - ./kuro.json:/app/kuro.json:ro
+      - ./data:/app/data
+    environment:
+      TZ: Asia/Shanghai
+    # 长连接进程不映射端口；管理全部走 `docker compose run --rm cli ...`
+    command: ["kuro", "serve", "--channel", "qq"]
+
+  # 管理命令专用（不常驻）：docker compose run --rm cli kuro <命令>
+  cli:
+    image: kurotutor:latest
+    profiles: ["cli"]
+    volumes:
+      # CLI 可能写配置（kuro config set），故可读写
+      - ./kuro.json:/app/kuro.json:rw
+      - ./data:/app/data
+    environment:
+      TZ: Asia/Shanghai
+    command: ["kuro", "--help"]
