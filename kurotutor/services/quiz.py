@@ -147,62 +147,78 @@ def search_jszkk(keyword: str, count: int = 3, *, timeout: float = 12.0) -> list
     return out
 
 
+_HUOHUA_SUBJECT = {
+    # （学段, 学科中文）→ 数据源 subject 代码
+    ("小学", "数学"): "xxsx", ("小学", "语文"): "xxyw", ("小学", "英语"): "xxyy",
+    ("初中", "数学"): "czsx", ("初中", "语文"): "czyw", ("初中", "物理"): "czwl",
+    ("初中", "化学"): "czhx", ("初中", "生物"): "czsw", ("初中", "地理"): "czdl",
+    ("初中", "历史"): "czls", ("初中", "政治"): "czzz", ("初中", "科学"): "czkx",
+    ("高中", "数学"): "gzsx", ("高中", "语文"): "gzyw", ("高中", "物理"): "gzwl",
+    ("高中", "化学"): "gzhx", ("高中", "生物"): "gzsw", ("高中", "地理"): "gzdl",
+    ("高中", "历史"): "gzls", ("高中", "政治"): "gzzz", ("高中", "英语"): "gzyy",
+}
+_DIFF_MAP = {"简单": "easy", "一般": "medium", "中等": "medium", "较难": "hard", "难": "hard"}
+
+
 def search_huohua(
     keyword: str,
     count: int = 3,
     *,
     api_key: str,
-    subject: str = "",
-    stage: str = "",
-    timeout: float = 20.0,
+    subject: str = "数学",
+    stage: str = "初中",
+    year: str = "2025",
+    timeout: float = 180.0,
 ) -> list[dict[str, Any]]:
-    """火花数据 K12 题库 API（¥5/100 次，空结果不扣费）：小初高 1656 万题 + 1085 万题图。
+    """火花数据 K12 题库 API（¥5/100 次检索，空结果不扣费）：小初高 1656 万题，返回题干/知识点/难度/来源。
 
-    POST /v1/search（source=k12_questions），返回题干/题图/答案/解析。api_key 到
-    huohuaapi.com 控制台注册开通（含 5 元即可用百次）。
+    接口要点（实测）：filters.year 必填（单年份）；subject 用「学段+学科」枚举代码（如 czsx=初中数学）；
+    knowledge 为数组；search_count 为 {"current": n, "planned": n} 对象；return.format=json。
+    返回题目为 markdown（公式以内嵌图片呈现，会提取出题图 URL 供下载）。
     """
     import httpx as _httpx
 
-    filters: dict[str, Any] = {}
-    if subject:
-        filters["subject"] = subject
-    filters["knowledge"] = keyword
+    subj_code = _HUOHUA_SUBJECT.get((stage, subject)) or _HUOHUA_SUBJECT.get(("初中", subject)) or "czsx"
     resp = _httpx.post(
         "https://api.huohuaapi.cn/v1/search",
         headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         json={
             "source": "k12_questions",
-            "purpose": f"找{stage or 'K12'}{subject or ''}{keyword}相关题目、答案与解析",
+            "purpose": f"找{stage}{subject}{keyword}相关的题目、答案和解析，用于给学生出练习题",
             "query": f"{keyword} 的题目、答案和解析",
-            "filters": filters,
+            "filters": {"subject": subj_code, "knowledge": [keyword], "year": year},
+            "search_count": {"current": max(1, count), "planned": max(1, count)},
             "return": {"format": "json"},
         },
         timeout=timeout,
     )
     resp.raise_for_status()
     data = resp.json()
-    results = data.get("results") or data.get("data") or []
     out: list[dict[str, Any]] = []
-    for item in (results if isinstance(results, list) else [])[:count]:
-        if isinstance(item, dict):
-            text = str(item.get("question") or item.get("text") or item.get("content") or "").strip()
-        else:
-            text = str(item).strip()
+    import re as _re
+
+    for item in (data.get("items") or [])[:count]:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("display_text") or "").strip()
         if len(text) < 10:
             continue
-        isdict = isinstance(item, dict)
-        answer = str(item.get("answer") or "").strip() if isdict else ""
-        analysis = str(item.get("analysis") or item.get("explanation") or "").strip() if isdict else ""
-        image = str(item.get("image") or item.get("image_url") or "").strip() if isdict else ""
+        fields = item.get("fields") or {}
+        evidence = item.get("evidence") or {}
+        images = _re.findall(r"!\[\]\((https?://[^)]+)\)", text)
+        diff_raw = str(fields.get("difficulty_label") or "medium")
         out.append(
             {
                 "text": text,
-                "answer": answer,
-                "analysis": analysis,
-                "knowledge_point": keyword,
-                "difficulty": str(item.get("difficulty") or "medium").strip() if isdict else "medium",
-                "image_url": image,
-                "source_url": "火花数据 K12 题库",
+                "answer": "",  # 检索接口不含答案：quiz_check 判分时按专业判断
+                "analysis": "",
+                "knowledge_point": (
+                    (fields.get("knowledge") or [keyword])[0] if fields.get("knowledge") else keyword
+                ),
+                "difficulty": _DIFF_MAP.get(diff_raw, "medium"),
+                "image_url": images[0] if images else "",
+                "image_urls": images[:5],
+                "source_url": str((evidence or {}).get("source") or "火花数据 K12 题库"),
                 "real": True,
             }
         )

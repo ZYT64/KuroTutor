@@ -150,14 +150,14 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             if questions:
                 source_note = "真题（网上找的）· " + source_note
 
-        # ② 免费题库 API：jszkk 全能搜题（免鉴权、社区题库，K12 覆盖有限）
+        # ② 免费题库 API：jszkk 全能搜题（免鉴权；仅在 web 搜不到时调用）
         if not questions and source in ("auto", "bank") and (topic or knowledge_point):
             keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
             found = await asyncio.to_thread(quiz_svc.search_jszkk, keyword, count)
             if found:
                 questions = found
                 source_note = "免费题库（jszkk 全能搜题）"
-        # ③ 在线题库 API：火花数据 K12（配了 api_key 才启用；¥5/100 次，空结果不扣费）
+        # ③ 付费题库 API：火花数据 K12（最后兜底，¥5/100 次——省着用，仅 web+jszkk 都无结果时调用）
         qbank_spec = ctx.config.models.qbank if ctx.config.models else None
         qbank_key = (qbank_spec.api_key or "").strip() if qbank_spec else ""
         if not questions and qbank_key and source in ("auto", "bank") and (topic or knowledge_point):
