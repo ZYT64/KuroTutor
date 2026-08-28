@@ -184,14 +184,18 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         qbank_key = (qbank_spec.api_key or "").strip() if qbank_spec else ""
         if not questions and qbank_key and source in ("auto", "bank") and (topic or knowledge_point):
             keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
-            found = await asyncio.to_thread(
-                quiz_svc.search_huohua,
-                keyword,
-                count,
-                api_key=qbank_key,
-                subject=(knowledge_point or topic).split("/")[0].strip(),
-                stage=stage,
-            )
+            try:
+                found = await asyncio.to_thread(
+                    quiz_svc.search_huohua,
+                    keyword,
+                    count,
+                    api_key=qbank_key,
+                    subject=(knowledge_point or topic).split("/")[0].strip(),
+                    stage=stage,
+                )
+            except Exception as exc:
+                found = []
+                source_note = f"火花题库调用失败（{str(exc)[:60]}），已跳过"
             if found:
                 questions = found
                 source_note = "在线题库（火花数据 K12）"
