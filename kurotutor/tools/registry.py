@@ -23,6 +23,7 @@ from . import (
     kb_corpus,
     lecture_gen,
     notebook,
+    quiz,
     review,
     solve_photo,
     web,
@@ -193,6 +194,70 @@ def build_default_registry() -> ToolRegistry:
     )
 
     # 复习引擎
+    registry.register(
+        "quiz_generate",
+        "个性化出题：按主题/知识点/画像薄弱点生成题目（可基于错题出变式）。学生要求出题、练题，"
+        "或你讲完错题想出同考点变式时使用。参数：topic、knowledge_point、count、difficulty、purpose、variants。",
+        {
+            "type": "object",
+            "properties": {
+                "topic": _p("主题，如『二次函数』"),
+                "knowledge_point": _p("知识点，格式『学科/章节/名称』"),
+                "count": {"type": "integer", "description": "题数（1-10，默认 3）"},
+                "difficulty": _p("easy/medium/hard，默认 medium"),
+                "purpose": _p("巩固练习/变式训练/考前冲刺"),
+                "variants": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "变式母题题干列表（如从刚讲过的错题出变式）",
+                },
+            },
+        },
+        quiz.quiz_generate,
+        category="quiz",
+    )
+
+    registry.register(
+        "quiz_check",
+        "判分学生作答（针对最近 quiz_generate 出的题）。学生提交答案时使用；答错自动记错题本并排复习。"
+        "参数：answers（学生答案，多题用 | 分隔）、question_index（只判第几题，可选）。",
+        {
+            "type": "object",
+            "properties": {
+                "answers": _p("学生的答案；多题用 | 分隔，按出题顺序"),
+                "question_index": {"type": "integer", "description": "只判第几题（1 起），可选"},
+            },
+            "required": ["answers"],
+        },
+        quiz.quiz_check,
+        category="quiz",
+    )
+
+    registry.register(
+        "plot_function",
+        "画函数图像（坐标网格 + 多条曲线，PNG）。讲函数/方程需要看图时使用。"
+        "参数：expressions（如 x^2-2*x-3，多个用列表或逗号）、x_min、x_max、title。",
+        {
+            "type": "object",
+            "properties": {
+                "expressions": {
+                    "oneOf": [
+                        {"type": "array", "items": {"type": "string"}},
+                        {"type": "string", "description": "逗号分隔的多个表达式"},
+                    ],
+                    "description": "函数表达式，变量 x；支持 +-*/^ 与 sin/cos/tan/sqrt/abs/log/ln/exp、pi/e",
+                },
+                "x_min": {"type": "number", "description": "x 范围下界，默认 -10"},
+                "x_max": {"type": "number", "description": "x 范围上界，默认 10"},
+                "title": _p("图标题，可选"),
+            },
+            "required": ["expressions"],
+        },
+        quiz.plot_function,
+        category="quiz",
+        sandbox_required=True,
+    )
+
     registry.register(
         "grade_homework",
         "作业批改：读取作业图片，逐题判分、归类错因、错题自动记入错题本并更新画像。学生发来作业图时使用。",

@@ -77,6 +77,12 @@ def build_system_prompt(student: Student | None = None) -> str:
         "④ 录入时写清楚知识点和一句话理由；同一道题不重复录。"
     )
     parts.append(
+        "【出题判分】出题用 quiz_generate（可传 variants 从刚讲错的题出变式）；出完把题目发给学生，"
+        "**绝不主动泄露答案**；学生提交答案后用 quiz_check 判分——答对：肯定并加深一问；"
+        "答错：讲清错因，再出一道同考点变式（错题已自动记错题本并排复习，告诉学生「已记下，之后帮你复习」）。"
+        "讲函数时可用 plot_function 画图辅助（图在工作区，发图给学生）。"
+    )
+    parts.append(
         "【课后沉淀】记住：\n"
         "① 若你已通过 solve_photo 处理过题目图片，记账（方法卡片/错题本）已经由该工具自动完成，"
         "不要在回复里再调用 kb_deposit / wrongbook_add，避免重复；把工具返回的『【沉淀】/【错题】』状态"

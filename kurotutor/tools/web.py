@@ -34,22 +34,55 @@ def _validate_url(url: str) -> str:
     return url
 
 
+def fetch_page_text(url: str, limit: int = 3000) -> str:
+    """抓网页正文（同步核心，web_fetch 工具与其他模块共用）。失败抛 httpx.HTTPError。"""
+    resp = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True)
+    resp.raise_for_status()
+    plain = re.sub(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", " ", resp.text, flags=re.I)
+    plain = re.sub(r"<[^>]+>", " ", plain)
+    return _html.unescape(re.sub(r"\s+", " ", plain)).strip()[:limit]
+
+
 async def web_fetch(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     """抓取一个网页，返回去 HTML 标签后的正文文本（截断）。参数：url。"""
     url = _validate_url((kwargs.get("url") or "").strip())
     if not url:
         return "请提供 url。"
     try:
-        resp = httpx.get(url, timeout=_TIMEOUT, follow_redirects=True)
-        resp.raise_for_status()
-        text = resp.text
+        plain = fetch_page_text(url)
     except httpx.HTTPError as exc:
         raise ToolError("网页抓取失败", cause=str(exc), fix="确认链接可访问、网络畅通") from exc
-    plain = re.sub(r"<script[\s\S]*?</script>|<style[\s\S]*?</style>", " ", text, flags=re.I)
-    plain = re.sub(r"<[^>]+>", " ", plain)
-    plain = _html.unescape(re.sub(r"\s+", " ", plain)).strip()
     limit = int(kwargs.get("limit") or 3000)
     return plain[:limit] or "（页面正文为空，可能是动态页面）"
+
+
+def make_search_fn(ctx: ToolContext, *, prefer_tavily: bool = False):
+    """按配置构造搜索函数 (query, limit) -> [结果行]。
+
+    prefer_tavily=True 时（如找真题场景）配置了 key 就优先 Tavily（质量高于 Bing 刮削）。
+    """
+    spec = ctx.config.models.search if ctx.config.models else None
+    api_key = (spec.api_key or "").strip() if spec else ""
+    configured = (spec.provider or "").strip().lower() if spec else ""
+
+    def _search(query: str, limit: int) -> list[str]:
+        order = []
+        if api_key and (configured == "tavily" or prefer_tavily):
+            order = [lambda q, n: _search_tavily(q, n, api_key)]
+        if configured == "duckduckgo":
+            order += [_search_duckduckgo, _search_bing]
+        else:
+            order += [_search_bing, _search_duckduckgo]
+        for fn in order:
+            try:
+                results = fn(query, limit)
+                if results:
+                    return results
+            except Exception:
+                continue
+        return []
+
+    return _search
 
 
 async def web_search(ctx: ToolContext, kwargs: dict[str, Any]) -> str:

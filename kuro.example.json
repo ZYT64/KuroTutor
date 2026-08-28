@@ -35,6 +35,11 @@
       "provider": "bing",
       "model": "",
       "api_key": ""
+    },
+    "qbank": {
+      "provider": "huohua",
+      "model": "",
+      "api_key": ""
     }
   },
   "permissions": {
