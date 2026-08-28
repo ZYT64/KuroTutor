@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 from pathlib import Path
 from typing import Any
@@ -18,6 +19,7 @@ from kurotutor.core.errors import ToolError
 from kurotutor.services import quiz as quiz_svc
 from kurotutor.services.llm import build_llm_provider
 from kurotutor.services.plot import plot_functions
+from kurotutor.services.vision import build_vision_provider, extract_json
 from kurotutor.storage import KnowledgePoint, WorkingContext, session_scope
 from kurotutor.tools.wrongbook import record_wrong_question
 
@@ -217,6 +219,10 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             except Exception:
                 continue  # 题图下载失败不影响题目本身
 
+    # 题图校验：多模态模型核对「图与题」的对应关系——不匹配的先尝试归位到其他题，仍不行则剔除
+    if ctx.config.models is not None and ctx.config.models.vision is not None:
+        await _verify_quiz_images(ctx, questions)
+
     _save_active_quiz(ctx, questions)
     lines = [
         f"已准备 {len(questions)} 道题（{purpose} · {difficulty} · {source_note}）。"
@@ -340,3 +346,57 @@ async def quiz_check(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         "根据判分继续教学：对的肯定并加深一问；错的讲清错因后再出一道同考点变式（quiz_generate + variants）。"
     )
     return "\n".join(lines)
+
+_VERIFY_IMG_PROMPT = (
+    "下面是一道数学题的题干，以及一张图片。请判断：这张图片是否是这道题的配图（公式渲染图、几何图形、"
+    "函数图像、统计图表等都算配图；与题目内容完全无关的图才算不匹配）。\n"
+    "题干：{question}\n"
+    '只输出 JSON：{{"match": true}} 或 {{"match": false}}，不要其他文字。'
+)
+
+
+async def _verify_quiz_images(ctx: ToolContext, questions: list[dict[str, Any]]) -> None:
+    """多模态模型核对题图归属：不匹配 → 尝试归位到其他题 → 仍不匹配则剔除图片。
+
+    视觉调用有上限（8 次）；校验调用失败时保留原图（宁滥勿缺，题目本身不受影响）。
+    """
+    vision = build_vision_provider(ctx.config.models.vision)
+    checked = 0
+    try:
+        for q in questions:
+            img = q.get("image_path")
+            if not img or not Path(img).exists() or checked >= 8:
+                continue
+            checked += 1
+            try:
+                raw = await vision.understand(img, _VERIFY_IMG_PROMPT.format(question=q["text"][:300]))
+                data = extract_json(raw)
+                matched = bool(data.get("match")) if isinstance(data, dict) else True
+            except Exception:
+                matched = True  # 校验失败按匹配处理，不阻塞出题
+            if matched:
+                continue
+            # 不匹配 → 尝试归位：与其他缺图题的题干逐个比对
+            relocated = False
+            for other in questions:
+                if other is q or other.get("image_path"):
+                    continue
+                try:
+                    raw = await vision.understand(
+                        img, _VERIFY_IMG_PROMPT.format(question=other["text"][:300])
+                    )
+                    data = extract_json(raw)
+                except Exception:
+                    break
+                if isinstance(data, dict) and data.get("match"):
+                    other["image_path"] = img
+                    q["image_path"] = ""  # 图已归位到其他题
+                    relocated = True
+                    break
+            if not relocated:
+                with contextlib.suppress(Exception):
+                    Path(img).unlink(missing_ok=True)
+                q["image_path"] = ""
+                q["image_dropped"] = "题图与题目不匹配，已剔除"
+    finally:
+        await vision.aclose()

@@ -15,6 +15,18 @@ from kurotutor.services.plot import _compile_expr, plot_functions
 from kurotutor.storage import Student, WrongQuestion, session_scope
 
 
+def _cfg_vision(tmp_path):
+    return load_config_from_data(
+        {
+            "models": {
+                "llm": {"provider": "echo", "model": "echo"},
+                "vision": {"provider": "openai", "model": "m", "api_key": "k"},
+            }
+        },
+        project_root=tmp_path,
+    )
+
+
 def _cfg(tmp_path):
     return load_config_from_data(
         {"models": {"llm": {"provider": "echo", "model": "echo"}}}, project_root=tmp_path
@@ -245,3 +257,36 @@ def qz_module_weakest(ctx):
     from kurotutor.tools.quiz import _weakest_points
 
     return _weakest_points(ctx, n=2)
+
+# ---- 题图校验（mock 视觉） ----------------------------------------------------
+def test_verify_quiz_images_relocate_and_drop(engine, monkeypatch, tmp_path):
+    import kurotutor.tools.quiz as qz
+
+    class FakeVision:
+        """第一次判不匹配（Q1），第二次判匹配（归位到 Q2）。"""
+
+        def __init__(self):
+            self.seq = [False, True]
+
+        async def understand(self, path, prompt, *, detail=None):
+            return '{"match": ' + str(self.seq.pop(0)).lower() + '}'
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(qz, "build_vision_provider", lambda spec: FakeVision())
+
+    cfg = _cfg_vision(tmp_path)
+    ctx = _ctx(cfg, engine)
+    img = Path(ctx.workspace) / "qbank_images" / "a.png"
+    img.parent.mkdir(parents=True, exist_ok=True)
+    from PIL import Image
+
+    Image.new("RGB", (300, 200), "white").save(img, format="PNG")
+    questions = [
+        {"text": "题一：勾股定理计算", "answer": "", "image_path": str(img)},
+        {"text": "题二：二次函数图像", "answer": "", "image_path": ""},
+    ]
+    _run(qz._verify_quiz_images(ctx, questions))
+    assert not questions[0].get("image_path"), "Q1 不匹配应被移走"
+    assert questions[1]["image_path"] == str(img), "图应归位到 Q2"
