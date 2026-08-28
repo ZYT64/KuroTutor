@@ -1,0 +1,9 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "youdao",
+      "url": "https://ai.youdao.com"
+    }
+  ]
+}

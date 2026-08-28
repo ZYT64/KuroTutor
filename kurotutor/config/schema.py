@@ -51,7 +51,7 @@ class ModelsConfig(BaseModel):
     reranker: ModelSpec | None = None
     layout: ModelSpec | None = None  # 版面分析（题集切题用），默认 RapidOCR 本地
     search: ModelSpec | None = None  # 网络搜索：provider=bing（默认，免密钥）/ tavily（需 api_key）
-    qbank: ModelSpec | None = None  # 在线题库：huohua（火花 K12 题库 token）/ jszkk（免费）
+    qbank: ModelSpec | None = None  # 在线题库：huohua（火花 K12 题库 token，¥5/100 次）
 
 
 class ChannelConfig(BaseModel):

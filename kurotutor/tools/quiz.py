@@ -150,35 +150,13 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             if questions:
                 source_note = "真题（网上找的）· " + source_note
 
-        # ② 题库 API（jszkk 免费搜题；有道精品题库 6000 万 K12 题库需配置 appKey+secret）
+        # ② 免费题库 API：jszkk 全能搜题（免鉴权、社区题库，K12 覆盖有限）
         if not questions and source in ("auto", "bank") and (topic or knowledge_point):
             keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
             found = await asyncio.to_thread(quiz_svc.search_jszkk, keyword, count)
             if found:
                 questions = found
                 source_note = "免费题库（jszkk 全能搜题）"
-        if not questions and source in ("auto", "bank") and (topic or knowledge_point):
-            qbank_spec = ctx.config.models.qbank if ctx.config.models else None
-            if qbank_spec and (qbank_spec.provider or "").lower() == "youdao":
-                yd_key = (qbank_spec.api_key or "").strip()
-                yd_secret = str((qbank_spec.model_dump() or {}).get("secret") or "").strip()
-                if yd_key and yd_secret:
-                    keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
-                    try:
-                        found = await asyncio.to_thread(
-                            quiz_svc.search_youdao, keyword, count, api_key=yd_key, secret=yd_secret
-                        )
-                    except Exception as exc:
-                        found = []
-                        note = f"有道题库调用失败（{exc}），跳过"
-                    else:
-                        note = ""
-                    if found:
-                        questions = found
-                        source_note = "题库（有道精品题库）"
-                    elif note:
-                        source_note = note
-
         # ③ 在线题库 API：火花数据 K12（配了 api_key 才启用；¥5/100 次，空结果不扣费）
         qbank_spec = ctx.config.models.qbank if ctx.config.models else None
         qbank_key = (qbank_spec.api_key or "").strip() if qbank_spec else ""
@@ -200,7 +178,7 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
                 questions = found
                 source_note = "在线题库（火花数据 K12）"
 
-        # ③ 兜底/指定：LLM 智能生成
+        # ④ 兜底/指定：LLM 智能生成
         if not questions and source != "web":
             if variants:
                 purpose = purpose if "变式" in purpose else "变式训练"
