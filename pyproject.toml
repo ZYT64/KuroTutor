@@ -27,7 +27,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+test = ["pytest>=8.0", "pytest-asyncio>=0.23", "numpy>=1.26", "pillow>=10.0"]
 dev = ["ruff>=0.5", "mypy>=1.10"]
 # 官方 QQ 机器人 SDK（tencent-connect/botpy）。不在 PyPI，需从 GitHub 安装：
 #   pip install git+https://github.com/tencent-connect/botpy.git
