@@ -62,11 +62,113 @@ def make_handlers(engine: Any, deliver: Callable[[str, str], None]) -> dict[str,
         if external_id:
             deliver(external_id, text)
 
+    def _instance_payload(task: Any) -> int | None:
+        import contextlib
+        import json
+
+        with contextlib.suppress(ValueError, TypeError):
+            payload = json.loads(task.payload or "{}")
+            iid = payload.get("instance_id")
+            if iid is not None:
+                return int(iid)
+        return None
+
+    def handle_prepare(task: Any) -> None:
+        """到点自动备课：生成讲义 → 推送就绪通知。"""
+        iid = _instance_payload(task)
+        if iid is None or task.student_id is None:
+            return
+        try:
+            from kurotutor.services.classroom import prepare_course
+
+            result = prepare_course(engine, iid)
+        except Exception as exc:
+            log_event(log, "prepare failed", level="warning", instance=iid, error=repr(exc))
+            return
+        external_id = _external_id(engine, task.student_id)
+        if external_id:
+            deliver(external_id, result["text"])
+
+    def handle_class_start(task: Any) -> None:
+        """到点开课：推送讲义要点与今日目标。"""
+        iid = _instance_payload(task)
+        if iid is None or task.student_id is None:
+            return
+        try:
+            from kurotutor.services.classroom import start_class_text
+
+            text = start_class_text(engine, iid)
+        except Exception as exc:
+            log_event(log, "class start failed", level="warning", instance=iid, error=repr(exc))
+            return
+        external_id = _external_id(engine, task.student_id)
+        if external_id and text:
+            deliver(external_id, text)
+
+    def handle_class_end(task: Any) -> None:
+        """到点下课：课后闭环（总结/作业/进度/下一节排课）。"""
+        iid = _instance_payload(task)
+        if iid is None or task.student_id is None:
+            return
+        try:
+            from kurotutor.services.classroom import end_class
+
+            text = end_class(engine, iid)
+        except Exception as exc:
+            log_event(log, "class end failed", level="warning", instance=iid, error=repr(exc))
+            return
+        external_id = _external_id(engine, task.student_id)
+        if external_id and text:
+            deliver(external_id, text)
+
+    def handle_report(task: Any) -> None:
+        """周报：生成 → 推送 → 自动排下一周（payload.weekly 时循环）。"""
+        import contextlib
+        import json
+
+        with contextlib.suppress(ValueError, TypeError):
+            payload = json.loads(task.payload or "{}")
+        if not (payload or {}).get("weekly"):
+            handle_message(task)
+            return
+        if task.student_id is None:
+            return
+        try:
+            from kurotutor.config.loader import load_config
+            from kurotutor.services.report import build_weekly_report
+
+            cfg = load_config()
+            result = build_weekly_report(
+                engine, task.student_id, llm_spec=cfg.models.llm, workspace=cfg.workspace
+            )
+        except Exception as exc:
+            log_event(log, "weekly report failed", level="warning", error=repr(exc))
+            return
+        external_id = _external_id(engine, task.student_id)
+        if external_id:
+            text = result["text"] + (f"\n\n📄 周报文档：{result['path']}" if result["path"] else "")
+            deliver(external_id, text)
+        # 循环：排下一周
+        from datetime import timedelta as _td
+
+        from kurotutor.services import scheduler as _sched
+
+        _sched.create_task(
+            engine,
+            student_id=task.student_id,
+            kind=_sched.Kinds.REPORT,
+            fire_at=task.fire_at + _td(days=7),
+            payload={"weekly": True},
+        )
+
     return {
         scheduler.Kinds.REVIEW: handle_review,
         scheduler.Kinds.REMINDER: handle_message,
         scheduler.Kinds.HOMEWORK: handle_message,
-        scheduler.Kinds.PREPARE: handle_message,
+        scheduler.Kinds.REPORT: handle_report,
+        scheduler.Kinds.PREPARE: handle_prepare,
+        scheduler.Kinds.CLASS_START: handle_class_start,
+        scheduler.Kinds.CLASS_END: handle_class_end,
     }
 
 

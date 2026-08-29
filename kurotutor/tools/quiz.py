@@ -128,6 +128,17 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         if weak:
             knowledge_point = weak[0]
             difficulty_note = difficulty_note or f"按画像薄弱点选题：{'、'.join(weak)}"
+    # 校本进度：登记了学校章节时，无明确主题则贴校情出题
+    if not topic and not variants:
+        from kurotutor.services.memory import get_school_progress
+
+        prog = get_school_progress(ctx.engine, ctx.student.id) if ctx.student else None
+        if prog and prog.chapter and (not knowledge_point or prog.chapter in knowledge_point):
+            knowledge_point = knowledge_point or f"{prog.chapter}"
+            school_note = f"贴合校本进度「{prog.chapter}」"
+            if prog.exam_date:
+                school_note += f"（临近考试：{prog.exam_date}）"
+            difficulty_note = difficulty_note or school_note
     if not topic and not knowledge_point and not variants:
         return "请告诉我出题方向：topic（主题）或 knowledge_point（知识点），或提供 variants（变式母题）。"
 

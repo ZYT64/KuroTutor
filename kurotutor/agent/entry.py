@@ -21,7 +21,7 @@ from kurotutor.agent.conversation import (
 from kurotutor.agent.core import Agent, AgentResponse
 from kurotutor.agent.registry import ToolRegistry
 from kurotutor.config.schema import AppConfig
-from kurotutor.core import get_logger
+from kurotutor.core import get_logger, log_event
 from kurotutor.services.llm import ChatMessage
 from kurotutor.storage import PendingRecord, Session, Student, WorkingContext
 from kurotutor.tools.wrongbook import record_wrong_question
@@ -237,7 +237,36 @@ class MessageEntry:
             sess = db.get(Session, session_id)
             if sess is not None:
                 sess.updated_at = datetime.now(UTC)
+
+        # 段 5（自进化·后台）：每 6 条学生发言，异步提取长期记忆事实（失败静默，不影响回复）
+        if response.ok and user_content:
+            self._maybe_extract_facts(student_id=student_id, user_text=user_content)
         return response
+
+    def _maybe_extract_facts(self, *, student_id: int, user_text: str) -> None:
+        """每 6 条学生发言触发一次事实提取（后台线程，静默失败）。"""
+        import asyncio as _asyncio
+        import contextlib as _contextlib
+
+        from kurotutor.services.memory import count_user_messages, extract_and_store_facts
+
+        def _job():
+            try:
+                n = count_user_messages(self._engine, student_id)
+                if n >= 6 and n % 6 == 0:
+                    new = extract_and_store_facts(
+                        self._engine, student_id, self._config.models.llm, user_text
+                    )
+                    if new:
+                        log_event(log, "memory facts stored", student=student_id, count=len(new))
+            except Exception as exc:  # 自进化永不影响主流程
+                import traceback as _tb
+
+                log_event(log, "memory facts skipped", level="warning",
+                          error=repr(exc), tb=_tb.format_exc()[-400:])
+
+        with _contextlib.suppress(RuntimeError):
+            _asyncio.get_running_loop().run_in_executor(None, _job)
 
 
 def _load_pending(engine: Any, student_id: int) -> PendingRecord | None:

@@ -128,6 +128,17 @@ class QuestionItem(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class SchoolProgress(SQLModel, table=True):
+    """校本同步：学校教材/章节/考试进度（每学生一行）。出题与备课优先贴合。"""
+
+    student_id: int = Field(primary_key=True, foreign_key="student.id")
+    textbook: str = ""  # 教材版本，如 人教版
+    chapter: str = ""  # 当前章节，如 二次函数
+    exam_date: str = ""  # 下次考试日期（ISO 或描述）
+    note: str = ""  # 备注（老师进度等）
+    updated_at: str = ""
+
+
 class CoursePlan(SQLModel, table=True):
     """课程方案。kind=single 单次课；series 系列课（系统教学）。"""
 

@@ -16,6 +16,7 @@ from kurotutor.agent.registry import ToolRegistry
 from . import (
     bank,
     basic,
+    classroom,
     docs,
     grade_homework,
     image_split,
@@ -24,7 +25,9 @@ from . import (
     lecture_gen,
     notebook,
     quiz,
+    report,
     review,
+    school,
     solve_photo,
     web,
     wrongbook,
@@ -231,6 +234,115 @@ def build_default_registry() -> ToolRegistry:
         },
         quiz.quiz_check,
         category="quiz",
+    )
+
+    # 定时课堂
+    registry.register(
+        "schedule_class",
+        "排课：单堂课或系列课（系列课会按学生目标自动设计大纲、每周同一时间）。"
+        "学生说『帮我约一节课』『我要上xx课』『排个系列课』时使用。自然语言时间请先换算为 ISO。"
+        "参数：subject、topic、start_at、minutes、series_count、goal。",
+        {
+            "type": "object",
+            "properties": {
+                "subject": _p("学科，如 数学/物理"),
+                "topic": _p("课题，如『二次函数图像与性质』"),
+                "start_at": _p("上课时间（本地 ISO，如 2026-08-30T15:00:00）"),
+                "minutes": {"type": "integer", "description": "时长分钟，默认 45"},
+                "series_count": {"type": "integer", "description": "系列课节数（单堂课不传）"},
+                "goal": _p("系列课目标（如『期末上 110 分』）"),
+            },
+            "required": ["subject", "topic", "start_at"],
+        },
+        classroom.schedule_class,
+        category="classroom",
+    )
+
+    registry.register(
+        "course_list",
+        "查看学生的课程安排（最近 20 节，含状态）。学生问『我有什么课/课表』时使用。",
+        {"type": "object", "properties": {}},
+        classroom.course_list,
+        category="classroom",
+    )
+
+    registry.register(
+        "reschedule_class",
+        "应急改期：把某节课移到新时间（相关备课/开课/下课任务自动重排）。参数：course_id、new_start。",
+        {
+            "type": "object",
+            "properties": {
+                "course_id": {"type": "integer", "description": "课实例编号"},
+                "new_start": _p("新时间（本地 ISO）"),
+            },
+            "required": ["course_id", "new_start"],
+        },
+        classroom.reschedule_class,
+        category="classroom",
+    )
+
+    registry.register(
+        "cancel_class",
+        "应急取消某节课。学生说『取消那节课』时使用。参数：course_id。",
+        {
+            "type": "object",
+            "properties": {"course_id": {"type": "integer", "description": "课实例编号"}},
+            "required": ["course_id"],
+        },
+        classroom.cancel_class,
+        category="classroom",
+    )
+
+    registry.register(
+        "prepare_class",
+        "手动触发备课（到点会自动备；学生想提前看讲义时手动触发）。参数：course_id。",
+        {
+            "type": "object",
+            "properties": {"course_id": {"type": "integer", "description": "课实例编号"}},
+            "required": ["course_id"],
+        },
+        classroom.prepare_class,
+        category="classroom",
+    )
+
+    # 学习周报
+    registry.register(
+        "weekly_report",
+        "生成本周学习周报（错题统计/掌握变化/复习完成度，LLM 润色 + Word 文档导出）。"
+        "学生要看周报/学情总结时使用。",
+        {"type": "object", "properties": {}},
+        report.weekly_report,
+        category="report",
+    )
+
+    registry.register(
+        "report_subscribe",
+        "订阅/退订每周日晚 8 点自动学习周报推送。参数：op（subscribe/unsubscribe）。",
+        {
+            "type": "object",
+            "properties": {"op": _p("subscribe / unsubscribe，默认 subscribe")},
+        },
+        report.report_subscribe,
+        category="report",
+    )
+
+    # 校本同步
+    registry.register(
+        "school_sync",
+        "校本同步：登记/查看学校教材版本、当前章节、考试安排。"
+        "学生提到学校进度/教材/考试时登记；出题与备课优先贴合校本进度。参数：op（set/get）、textbook、chapter、exam_date、note。",
+        {
+            "type": "object",
+            "properties": {
+                "op": _p("set（登记）/ get（查看），默认 get"),
+                "textbook": _p("教材版本，如 人教版"),
+                "chapter": _p("当前学校进度章节，如 二次函数"),
+                "exam_date": _p("下次考试日期或描述"),
+                "note": _p("备注（老师进度等）"),
+            },
+        },
+        school.school_sync,
+        category="school",
     )
 
     registry.register(
