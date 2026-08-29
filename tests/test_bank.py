@@ -92,6 +92,21 @@ def test_bank_add_dedup(engine, registry, tmp_path):
     assert len(rows) == 1
 
 
+def test_bank_add_fuzzy_dedup(engine, registry, tmp_path):
+    """模糊去重：标点/空白/全半角/大小写差异不误判为新题。"""
+    cfg = _cfg(tmp_path)
+    ctx = _ctx(cfg, engine)
+    first = {"question": "已知方程 x^2 - 5x + 6 = 0，求两根。", "kind": "good"}
+    _run(registry.execute(ctx, "bank_add", first))
+    # OCR 转写变体：全角标点、空格、符号写法不同，但语义同题
+    variant = {"question": "已知方程 x2−5x+6=0, 求两根！", "kind": "good"}
+    out = _run(registry.execute(ctx, "bank_add", variant))
+    assert "不重复收录" in out
+    with session_scope(engine) as db:
+        rows = db.exec(select(QuestionItem)).all()
+    assert len(rows) == 1
+
+
 def test_bank_add_requires_content(engine, registry, tmp_path):
     cfg = _cfg(tmp_path)
     ctx = _ctx(cfg, engine)

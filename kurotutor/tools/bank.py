@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from sqlmodel import select
@@ -13,9 +14,20 @@ from sqlmodel import select
 from kurotutor.agent.context import ToolContext
 from kurotutor.storage import QuestionItem, session_scope
 
+# 模糊去重用：剔除空白/中英文标点/符号/运算符全半角变体，大小写归一后比对
+_STEM_NOISE = re.compile(
+    r"[\s，。、；：？！“”‘’（）《》〈〉【】「」·…—．.,;:?!()（）\[\]【】{}<>\"'`~*#@$%^&\\|/+-"
+    r"−＝－×÷≈≠≥≤^=]+"
+)
+
 
 def _text(v: Any) -> str:
     return (str(v) if v is not None else "").strip()
+
+
+def _norm_stem(s: str) -> str:
+    """题干规范化：去空白标点、小写化，用于模糊判重（OCR 转写差异不误判同题）。"""
+    return _STEM_NOISE.sub("", s.casefold())[:120]
 
 
 async def bank_add(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
@@ -39,8 +51,8 @@ async def bank_add(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     source = _text(kwargs.get("source")) or "tutoring"
 
     with session_scope(ctx.engine) as db:
-        # 去重护栏：同一学生 + 相同题干（前 80 字符一致视为同题）不重复收录
-        stem = question[:80]
+        # 去重护栏：同一学生 + 相同题干（规范化后模糊比对，OCR/转写差异不重复收录）
+        stem = _norm_stem(question)
         dup = db.exec(
             select(QuestionItem)
             .where(QuestionItem.student_id == ctx.student.id)
@@ -48,7 +60,7 @@ async def bank_add(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             .limit(50)
         ).all()
         for item in dup:
-            if stem and item.question_text[:80] == stem:
+            if stem and _norm_stem(item.question_text) == stem:
                 return f"这道题已在题集里了（{item.created_at:%m-%d} 录入），不重复收录。"
         item = QuestionItem(
             student_id=ctx.student.id,
