@@ -85,7 +85,7 @@ class Agent:
             student=student,
             session_id=session_id,
         )
-        self._system = build_system_prompt(student)
+        self._system = build_system_prompt(student, engine=engine)
 
     @property
     def registry(self) -> ToolRegistry:

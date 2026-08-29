@@ -290,3 +290,27 @@ def test_verify_quiz_images_relocate_and_drop(engine, monkeypatch, tmp_path):
     _run(qz._verify_quiz_images(ctx, questions))
     assert not questions[0].get("image_path"), "Q1 不匹配应被移走"
     assert questions[1]["image_path"] == str(img), "图应归位到 Q2"
+
+
+def test_quiz_dedupe_recent(engine, registry, tmp_path):
+    """出题防重复：7 天内出过的题（含题集）被剔除，变体写法也认得出。"""
+    import asyncio as _asyncio
+
+    import kurotutor.tools.quiz as qz
+
+    cfg = _cfg(tmp_path)
+    ctx = _ctx(cfg, engine)
+
+    q1 = {"text": "已知方程 x^2 - 5x + 6 = 0，求两根。", "answer": "2 和 3"}
+    qz._remember_quiz(ctx, [q1])
+    # 同题变体（全角/符号写法不同）
+    kept, dropped = qz._dedupe_questions(ctx, [
+        {"text": "已知方程 x2−5x+6=0, 求两根！", "answer": "2 和 3"},
+        {"text": "解不等式 2x > 10", "answer": "x > 5"},
+    ])
+    assert dropped == 1 and len(kept) == 1 and kept[0]["text"].startswith("解不等式")
+
+    # 题集里的题也要避开
+    _asyncio.run(registry.execute(ctx, "bank_add", {"question": "计算 (3+5)×2 的结果", "kind": "good"}))
+    kept2, dropped2 = qz._dedupe_questions(ctx, [{"text": "计算 (3+5)x2 的结果？", "answer": "16"}])
+    assert dropped2 == 1 and kept2 == []

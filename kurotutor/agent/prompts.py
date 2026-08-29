@@ -10,6 +10,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from kurotutor.storage.models import Stage, Student
 
 # 角色定位与教学法（产品规格书 1.2）
@@ -36,8 +38,8 @@ _STAGE_GUIDE = {
 }
 
 
-def build_system_prompt(student: Student | None = None) -> str:
-    """生成系统提示词。有学生画像则叠加学段适配与已记录偏好。"""
+def build_system_prompt(student: Student | None = None, engine: Any = None) -> str:
+    """生成系统提示词。有学生画像则叠加学段适配与已记录偏好；有数据库则注入错因画像。"""
     parts = [_PERSONA]
     if student and student.stage:
         parts.append("【学段适配】" + _STAGE_GUIDE.get(student.stage, _STAGE_GUIDE[Stage.JUNIOR]))
@@ -47,6 +49,10 @@ def build_system_prompt(student: Student | None = None) -> str:
         parts.append("【学生称呼】这位学生还没设置昵称，称呼他『同学』即可（不要用数字/字母编号称呼他）。")
     if student and student.note:
         parts.append(f"【学生备注】{student.note}")
+    if student is not None and engine is not None:
+        profile_note = _error_profile_note(student, engine)
+        if profile_note:
+            parts.append(profile_note)
     parts.append(
         "【答案出口】若学生明确表示要答案（如『直接告诉我答案』『别问了』『我看不懂，讲吧』"
         "『我卡住了』『这是选择题快给我』），立即给出完整解答和关键方法，"
@@ -63,6 +69,14 @@ def build_system_prompt(student: Student | None = None) -> str:
         "【工具使用】你是一个 Agent，手头有一组工具（如拍照解题、知识库、错题本、讲义生成）。"
         "当完成任务需要工具时，调用它们；能直接回答的就直接回答。"
         "工具返回结果后，基于结果继续与学生对话。"
+    )
+    parts.append(
+        "【错误兜底话术】工具返回的错误信息（如带 [工具错误] 字样、报错堆栈、『稍后重试』提示）"
+        "是给你看的，**绝不能原样转发给学生**——学生会看不懂、会觉得老师坏了。遇到工具失败时：\n"
+        "① 用老师的话轻描淡写地带过：如「这部分我这边没查到资料，我们直接用稳妥的思路来讲」"
+        "「这道题的图我暂时画不出来，你先按我说的步骤想象一下」；\n"
+        "② 能降级就降级：搜不到真题就直接自己出题，画不出图就文字描述，别卡在工具上；\n"
+        "③ 别编造工具本该返回的内容，也别重复尝试超过一次——教学继续比工具完美更重要。"
     )
     parts.append(
         "【题集录入策略】题集（bank_add）是学生的「值得重做/重看」收藏，分错题与好题两类，"
@@ -112,3 +126,53 @@ def build_system_prompt(student: Student | None = None) -> str:
         "kb_deposit / wrongbook_add 手动沉淀。\n记住：先讲清楚，再沉淀；不要为了沉淀打断教学节奏。"
     )
     return "\n\n".join(parts)
+
+
+def _error_profile_note(student: Student, engine: Any) -> str:
+    """从错题本统计该学生近 30 天的错因类型与最薄弱知识点，注入提示词供讲题时针对性提醒。"""
+    from datetime import UTC, datetime, timedelta
+
+    from sqlmodel import select
+
+    from kurotutor.storage import KnowledgePoint, WrongQuestion, session_scope
+
+    try:
+        with session_scope(engine) as db:
+            since = datetime.now(UTC) - timedelta(days=30)
+            rows = db.exec(
+                select(WrongQuestion)
+                .where(
+                    WrongQuestion.student_id == student.id,
+                    WrongQuestion.created_at >= since,  # type: ignore[operator]
+                )
+                .limit(100)
+            ).all()
+            weak = db.exec(
+                select(KnowledgePoint)
+                .where(
+                    KnowledgePoint.student_id == student.id,
+                    KnowledgePoint.confidence >= 0.2,
+                )
+                .order_by(KnowledgePoint.mastery.asc())
+                .limit(2)
+            ).all()
+    except Exception:
+        return ""
+
+    counts: dict[str, int] = {}
+    for r in rows:
+        t = (r.error_type or "").strip()
+        if t and t != "unknown":
+            counts[t] = counts.get(t, 0) + 1
+    lines = []
+    if counts:
+        top = sorted(counts.items(), key=lambda kv: -kv[1])[:2]
+        dist = "、".join(f"{k}（{v} 次）" for k, v in top)
+        lines.append(f"近 30 天错因集中在：{dist}。讲题时优先针对这类错误给检查清单和防错提醒。")
+    if weak:
+        names = "、".join(f"{k.name}（掌握度 {k.mastery:.0%}）" for k in weak if k.name)
+        if names:
+            lines.append(f"当前最薄弱：{names}。讲到相关内容时多给一步铺垫，出题可优先覆盖。")
+    if not lines:
+        return ""
+    return "【错因画像】" + " ".join(lines)

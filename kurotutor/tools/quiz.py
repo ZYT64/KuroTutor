@@ -20,10 +20,92 @@ from kurotutor.services import quiz as quiz_svc
 from kurotutor.services.llm import build_llm_provider
 from kurotutor.services.plot import plot_functions
 from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
-from kurotutor.storage import KnowledgePoint, WorkingContext, session_scope
+from kurotutor.storage import KnowledgePoint, QuestionItem, WorkingContext, session_scope
 from kurotutor.tools.wrongbook import record_wrong_question
 
 _QUIZ_KEY = "active_quiz"
+_QUIZ_HISTORY_KEY = "recent_quiz"
+_STEM_NOISE = None
+
+
+def _norm_stem(s: str) -> str:
+    """题干规范化（与题集模糊去重同口径）：去空白/标点/符号变体后比对。"""
+    import re
+
+    global _STEM_NOISE
+    if _STEM_NOISE is None:
+        _STEM_NOISE = re.compile(
+            r"[\s，。、；：？！“”‘’（）《》〈〉【】「」·…—．.,;:?!()（）\[\]【】{}<>\"'`~*#@$%^&\|/+-"
+            r"−＝－×÷≈≠≥≤^=]+"
+        )
+    return _STEM_NOISE.sub("", s.casefold())[:120]
+
+
+def _load_quiz_history(ctx: ToolContext) -> list[dict[str, Any]]:
+    if ctx.student is None:
+        return []
+    with session_scope(ctx.engine) as db:
+        wc = db.get(WorkingContext, ctx.student.id)
+        if wc is None:
+            return []
+        try:
+            data = json.loads(wc.current_problem or "{}")
+        except Exception:
+            return []
+        hist = data.get(_QUIZ_HISTORY_KEY)
+        return hist if isinstance(hist, list) else []
+
+
+def _remember_quiz(ctx: ToolContext, questions: list[dict[str, Any]]) -> None:
+    """记录本轮已出的题干（7 天窗口、上限 100 条），供后续出题去重。"""
+    if ctx.student is None:
+        return
+    import time as _time
+
+    now = _time.time()
+    hist = [
+        h for h in _load_quiz_history(ctx)
+        if isinstance(h, dict) and now - float(h.get("ts", 0)) < 7 * 86400
+    ]
+    for q in questions:
+        stem = _norm_stem(str(q.get("text") or ""))
+        if stem:
+            hist.append({"stem": stem, "ts": now})
+    with session_scope(ctx.engine) as db:
+        wc = db.get(WorkingContext, ctx.student.id)
+        if wc is None:
+            wc = WorkingContext(student_id=ctx.student.id)
+            db.add(wc)
+        try:
+            data = json.loads(wc.current_problem or "{}")
+        except Exception:
+            data = {}
+        data[_QUIZ_HISTORY_KEY] = hist[-100:]
+        wc.current_problem = json.dumps(data, ensure_ascii=False)
+        db.add(wc)
+
+
+def _dedupe_questions(ctx: ToolContext, questions: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], int]:
+    """过滤近期已出过的题（WorkingContext 7 天历史 + 题集）。返回 (去重后, 剔除数)。"""
+    seen = {h.get("stem") for h in _load_quiz_history(ctx) if isinstance(h, dict)}
+    if ctx.student is not None:
+        with session_scope(ctx.engine) as db:
+            rows = db.exec(
+                select(QuestionItem.question_text)
+                .where(QuestionItem.student_id == ctx.student.id)
+                .limit(200)
+            ).all()
+            seen |= {_norm_stem(t) for t in rows if t}
+    kept, dropped = [], 0
+    for q in questions:
+        stem = _norm_stem(str(q.get("text") or ""))
+        if stem and stem in seen:
+            dropped += 1
+            continue
+        kept.append(q)
+        if stem:
+            seen.add(stem)
+    return kept, dropped
 
 _STAGE_MAP = {"primary": "小学", "junior": "初中", "senior": "高中", "university": "大学"}
 
@@ -228,6 +310,11 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     finally:
         await llm.aclose()
 
+    # 出题防重复：剔除近期（7 天内）已出过的题（含题集/错题记录），不足时提示但不阻塞
+    questions, dup_dropped = _dedupe_questions(ctx, questions)
+    if not questions:
+        return "这几天这个考点已经出过一轮了（出过的题都记着呢）。换个知识点、或稍过几天再练，效果更好。"
+
     # 题图下载：题库返回的配图 URL → 下载落盘（题目完整下载：题干/答案/解析/配图都在工作区）
     if ctx.student is not None:
         img_dir = ctx.student_dir("qbank_images")
@@ -258,10 +345,13 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         await _verify_quiz_images(ctx, questions)
 
     _save_active_quiz(ctx, questions)
+    _remember_quiz(ctx, questions)
     lines = [
         f"已准备 {len(questions)} 道题（{purpose} · {difficulty} · {source_note}）。"
         "把题目发给学生，**先不要透露答案**。"
     ]
+    if dup_dropped:
+        lines.insert(1, f"（已自动跳过 {dup_dropped} 道近期出过的重复题）")
     if difficulty_note:
         lines.insert(1, f"（难度依据：{difficulty_note}）")
     n_img = sum(1 for q in questions if q.get("image_path"))
