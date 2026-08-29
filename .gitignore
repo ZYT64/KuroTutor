@@ -44,3 +44,12 @@ weights/
 
 # 评测运行产物
 evals/last_report.json
+
+# 开发过程文档（公开仓库不含，本地保留）
+CLAUDE.md
+AGENTS.md
+SUGGESTIONS.md
+REAL-SCENE-REPORT.md
+STUDENT-VIEW-ACCEPTANCE.md
+产品规格书.md
+.claude/
