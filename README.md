@@ -10,6 +10,8 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?style=flat-square&logo=docker&logoColor=white)](#docker)
 [![QQ](https://img.shields.io/badge/QQ-%E5%AE%98%E6%96%B9%20SDK-12B7F5?style=flat-square&logo=tencentqq&logoColor=white)](#接入-qq)
 
+[English](README_EN.md) | 简体中文
+
 </div>
 
 KuroTutor 是一个部署在自己服务器上的 AI 家教机器人，接入 QQ 私聊。学生把不会的题目拍下来发过去，它读题之后先给思路、逐步引导，而不是直接甩答案；做错的题会记进错题本，按遗忘曲线排期，过几天再推回来重做，直到真正掌握。
