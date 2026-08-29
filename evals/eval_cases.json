@@ -1,0 +1,62 @@
+[
+  {
+    "name": "M1-讲题-引导式",
+    "message": "老师，勾股定理是什么？给我讲讲，先别给太难的内容",
+    "expect_tools": [],
+    "expect_keywords": ["直角"]
+  },
+  {
+    "name": "M1-出题-quiz_generate",
+    "message": "给我出 2 道一元一次方程的题练练",
+    "expect_tools": ["quiz_generate"],
+    "expect_keywords": ["题"]
+  },
+  {
+    "name": "M2-排课-schedule_class",
+    "message": "帮我约一节数学课，讲一元二次方程，下周六下午三点",
+    "expect_tools": ["schedule_class"],
+    "expect_keywords": ["排课", "已"]
+  },
+  {
+    "name": "M2-查课表-course_list",
+    "message": "我现在有什么课？",
+    "expect_tools": ["course_list"],
+    "expect_keywords": ["课"]
+  },
+  {
+    "name": "M2-周报-weekly_report",
+    "message": "帮我生成这周的学习周报",
+    "expect_tools": ["weekly_report"],
+    "expect_keywords": ["周报"]
+  },
+  {
+    "name": "M2-校本同步-school_sync",
+    "message": "我们学校用人教版教材，现在讲到全等三角形",
+    "expect_tools": ["school_sync"],
+    "expect_keywords": ["登记", "校本"]
+  },
+  {
+    "name": "M3-诊断-diagnostic_start",
+    "message": "测测我的数学水平",
+    "expect_tools": ["diagnostic_start"],
+    "expect_keywords": ["诊断"]
+  },
+  {
+    "name": "M3-打卡-daily_checkin",
+    "message": "老师我来打个卡",
+    "expect_tools": ["daily_checkin"],
+    "expect_keywords": ["打卡"]
+  },
+  {
+    "name": "M3-沙箱-code_run",
+    "message": "用代码帮我算一下 2 的 20 次方是多少",
+    "expect_tools": ["code_run"],
+    "expect_keywords": ["1048576", "输出"]
+  },
+  {
+    "name": "M3-目标-goal_set",
+    "message": "我的目标是期末数学考到 95 分以上",
+    "expect_tools": ["goal_set"],
+    "expect_keywords": ["目标"]
+  }
+]

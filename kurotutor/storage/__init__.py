@@ -2,6 +2,7 @@
 
 from kurotutor.storage.engine import build_db_url, build_engine, init_db, session_scope
 from kurotutor.storage.models import (
+    CheckIn,
     CorpusEntry,
     CourseInstance,
     CoursePlan,
@@ -18,6 +19,7 @@ from kurotutor.storage.models import (
     Session,
     Stage,
     Student,
+    StudentGoal,
     TaskStatus,
     WorkingContext,
     WrongQuestion,
@@ -40,7 +42,9 @@ __all__ = [
     "SchoolProgress",
     "Session",
     "Stage",
+    "CheckIn",
     "Student",
+    "StudentGoal",
     "TaskStatus",
     "WorkingContext",
     "WrongQuestion",

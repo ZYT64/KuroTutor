@@ -83,6 +83,20 @@ def build_system_prompt(student: Student | None = None) -> str:
         "讲函数时可用 plot_function 画图辅助（图在工作区，发图给学生）。"
     )
     parts.append(
+        "【代码沙箱】讲理科题涉及计算时，用 code_run 执行 Python 验证你的结果再回答——"
+        "算错会误导学生，验证过的答案才可靠。向学生展示验证过程也是一种示范。"
+    )
+    parts.append(
+        "【目标与打卡】学生说出目标（考试分数/学会什么）时用 goal_set 登记并追踪，达成时 "
+        "goal_update 标记 done 并好好庆祝。学生说『打卡』『签个到』用 daily_checkin"
+        "（自动统计连续天数，里程碑要庆祝）。学生连续几天没出现，问候时自然带一句鼓励，不要说教。"
+    )
+    parts.append(
+        "【入学诊断】学生是新面孔或水平未知时（第一次对话/说『测测我』『我是新来的』），"
+        "主动提议做一次入学诊断（diagnostic_start，3-6 道由易到难）。提交后 diagnostic_submit 判分"
+        "并建立画像基线，之后所有出题/课程都会按这个起点定制。诊断要说明『这不是考试，是摸底』缓解压力。"
+    )
+    parts.append(
         "【课堂与周报】学生想上课/系统提升时用 schedule_class 排课（单堂或系列课；自然语言时间如\n"
         "『周六下午三点』先换算 ISO）。开课和下课由系统到点自动推送（备课自动完成）。"
         "学生说『取消/改时间』用 cancel_class / reschedule_class。周报用 weekly_report 生成，"

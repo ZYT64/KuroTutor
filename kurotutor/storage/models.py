@@ -139,6 +139,29 @@ class SchoolProgress(SQLModel, table=True):
     updated_at: str = ""
 
 
+class StudentGoal(SQLModel, table=True):
+    """学习目标（目标管理）。subject+goal 描述一个可追踪目标，progress 由 Agent 更新。"""
+
+    id: int | None = Field(default=None, primary_key=True)
+    student_id: int = Field(index=True, foreign_key="student.id")
+    subject: str = ""  # 学科
+    goal: str = ""  # 目标描述，如 期末数学上 110 分
+    target_date: str = ""  # 目标日期（ISO 或描述）
+    progress: str = ""  # 当前进度备注
+    status: str = "active"  # active / done / dropped
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class CheckIn(SQLModel, table=True):
+    """每日学习打卡（激励闭环）。每学生每天一条（date 唯一）。"""
+
+    id: int | None = Field(default=None, primary_key=True)
+    student_id: int = Field(index=True, foreign_key="student.id")
+    date: str = Field(index=True)  # 打卡日期 YYYY-MM-DD（本地）
+    note: str = ""  # 今日一句话
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class CoursePlan(SQLModel, table=True):
     """课程方案。kind=single 单次课；series 系列课（系统教学）。"""
 

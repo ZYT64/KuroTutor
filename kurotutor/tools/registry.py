@@ -17,7 +17,10 @@ from . import (
     bank,
     basic,
     classroom,
+    code,
+    diagnostic,
     docs,
+    goal,
     grade_homework,
     image_split,
     kb,
@@ -222,7 +225,8 @@ def build_default_registry() -> ToolRegistry:
 
     registry.register(
         "quiz_check",
-        "判分学生作答（针对最近 quiz_generate 出的题）。学生提交答案时使用；答错自动记错题本并排复习。"
+        "判分学生作答——仅针对最近 quiz_generate 出的练习题"
+        "（入学诊断要用 diagnostic_submit，别用这个）。答错自动记错题本并排复习。"
         "参数：answers（学生答案，多题用 | 分隔）、question_index（只判第几题，可选）。",
         {
             "type": "object",
@@ -303,6 +307,107 @@ def build_default_registry() -> ToolRegistry:
         },
         classroom.prepare_class,
         category="classroom",
+    )
+
+    # 入学诊断
+    registry.register(
+        "diagnostic_start",
+        "入学诊断：给新学生出 3-6 道由易到难的摸底题（按学段学科）。新学生加入、或学生说『测测我的水平』"
+        "时使用；也可在学生水平未知、需要建立画像基线时主动提议。参数：subject、count。",
+        {
+            "type": "object",
+            "properties": {
+                "subject": _p("学科，默认 数学"),
+                "count": {"type": "integer", "description": "题数 3-6，默认 4"},
+            },
+        },
+        diagnostic.diagnostic_start,
+        category="diagnostic",
+    )
+
+    registry.register(
+        "diagnostic_submit",
+        "提交诊断答案：逐题判分 → 画像基线写入 → 诊断报告。学生提交答案后立即使用。参数：answers（| 分隔）。",
+        {
+            "type": "object",
+            "properties": {"answers": _p("学生答案，多题用 | 分隔，按出题顺序")},
+            "required": ["answers"],
+        },
+        diagnostic.diagnostic_submit,
+        category="diagnostic",
+    )
+
+    # 目标管理 + 打卡激励
+    registry.register(
+        "goal_set",
+        "登记学习目标（目标管理）。学生说出目标（如『期末上 110 分』『学会二次函数』）时登记追踪。"
+        "参数：goal、subject、target_date、progress。",
+        {
+            "type": "object",
+            "properties": {
+                "goal": _p("目标描述"),
+                "subject": _p("学科"),
+                "target_date": _p("目标日期"),
+                "progress": _p("当前进度"),
+            },
+            "required": ["goal"],
+        },
+        goal.goal_set,
+        category="goal",
+    )
+
+    registry.register(
+        "goal_list",
+        "查看学习目标与进度。学生问『我的目标』时使用。",
+        {"type": "object", "properties": {}},
+        goal.goal_list,
+        category="goal",
+    )
+
+    registry.register(
+        "goal_update",
+        "更新目标进度或状态（达成/放弃）。学生汇报进度或目标达成时使用。参数：goal_id、progress、status。",
+        {
+            "type": "object",
+            "properties": {
+                "goal_id": {"type": "integer", "description": "目标编号"},
+                "progress": _p("当前进度备注"),
+                "status": _p("active/done/dropped"),
+            },
+            "required": ["goal_id"],
+        },
+        goal.goal_update,
+        category="goal",
+    )
+
+    registry.register(
+        "daily_checkin",
+        "每日学习打卡：连续天数统计 + 里程碑鼓励。学生说『打卡』『签个到』时使用。"
+        "参数：note（今日一句话，可选）。",
+        {
+            "type": "object",
+            "properties": {"note": _p("今日学习一句话")},
+        },
+        goal.daily_checkin,
+        category="goal",
+    )
+
+    # 代码沙箱
+    registry.register(
+        "code_run",
+        "在隔离子进程执行 Python 代码（仅数学/统计白名单模块，无网络无文件，10 秒超时）。"
+        "用于验证计算结果、枚举找规律、检查解题数值——讲理科题时推荐用它核对自己口算的结果。"
+        "参数：code、timeout。",
+        {
+            "type": "object",
+            "properties": {
+                "code": _p("Python 代码（print 输出结果）"),
+                "timeout": {"type": "integer", "description": "超时秒数，默认 10"},
+            },
+            "required": ["code"],
+        },
+        code.code_run,
+        category="code",
     )
 
     # 学习周报

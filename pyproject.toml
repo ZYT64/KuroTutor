@@ -45,6 +45,7 @@ include = ["kurotutor*"]
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+extend-exclude = ["scripts"]  # 一次性脚本/评测驱动不参与 lint
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "SIM"]
