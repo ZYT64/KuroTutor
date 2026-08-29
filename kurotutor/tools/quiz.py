@@ -28,6 +28,66 @@ _QUIZ_KEY = "active_quiz"
 _STAGE_MAP = {"primary": "小学", "junior": "初中", "senior": "高中", "university": "大学"}
 
 
+async def find_real_questions_via_ctx(
+    ctx: ToolContext,
+    llm,
+    *,
+    topic: str,
+    stage: str = "中学",
+    difficulty: str = "medium",
+    count: int = 3,
+    source: str = "auto",
+) -> tuple[list[dict[str, Any]], str]:
+    """真题链（用户定序）：web 搜真题 → jszkk 免费题库 → 火花 K12 付费兜底。
+
+    出题与入学诊断共用的找题入口；返回 (题目列表, 来源说明)，
+    全空表示都没找到，由调用方决定回退策略（如智能生成）。
+    ``source`` 语义与 quiz_generate 一致：web 只走①，bank 只走②③，auto 全走。
+    """
+    questions: list[dict[str, Any]] = []
+    source_note = ""
+    # ① web 搜真题：搜索 → 抓正文 → LLM 提取结构化原题（Tavily 优先，相关性过滤）
+    if source in ("auto", "web") and topic:
+        from kurotutor.tools.web import fetch_page_text, make_search_fn
+
+        search_fn = make_search_fn(ctx, prefer_tavily=True)
+
+        def fetch_fn(url: str, limit: int = 2500) -> str:
+            return fetch_page_text(url, limit)
+
+        questions, note = await quiz_svc.find_real_questions(
+            llm, search_fn=search_fn, fetch_fn=fetch_fn, topic=topic,
+            stage=stage, difficulty=difficulty, count=count,
+        )
+        if questions:
+            return questions, "真题（网上找的）· " + note
+    if not questions and source in ("auto", "bank") and topic:
+        # ② 免费题库 API：jszkk 全能搜题（免鉴权；仅在 web 搜不到时调用）
+        keyword = topic.split("/")[-1].strip() or topic
+        found = await asyncio.to_thread(quiz_svc.search_jszkk, keyword, count)
+        if found:
+            return found, "免费题库（jszkk 全能搜题）"
+        # ③ 付费题库 API：火花数据 K12（最后兜底，¥5/100 次——省着用，仅 web+jszkk 都无结果时调用）
+        qbank_spec = ctx.config.models.qbank if ctx.config.models else None
+        qbank_key = (qbank_spec.api_key or "").strip() if qbank_spec else ""
+        if qbank_key:
+            try:
+                found = await asyncio.to_thread(
+                    quiz_svc.search_huohua,
+                    keyword,
+                    count,
+                    api_key=qbank_key,
+                    subject=topic.split("/")[0].strip(),
+                    stage=stage,
+                )
+            except Exception as exc:
+                found = []
+                source_note = f"火花题库调用失败（{str(exc)[:60]}），已跳过"
+            if found:
+                return found, "在线题库（火花数据 K12）"
+    return [], source_note or "未找到合适真题"
+
+
 def _save_active_quiz(ctx: ToolContext, quiz: list[dict[str, Any]]) -> None:
     if ctx.student is None:
         return
@@ -147,49 +207,12 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     questions: list[dict[str, Any]] = []
     source_note = ""
     try:
-        # ① web 搜真题：搜索 → 抓正文 → LLM 提取结构化原题（Tavily 优先，相关性过滤）
-        if source in ("auto", "web") and (topic or knowledge_point):
-            from kurotutor.tools.web import fetch_page_text, make_search_fn
-
-            search_fn = make_search_fn(ctx, prefer_tavily=True)
-
-            def fetch_fn(url: str, limit: int = 2500) -> str:
-                return fetch_page_text(url, limit)
-
-            questions, source_note = await quiz_svc.find_real_questions(
-                llm, search_fn=search_fn, fetch_fn=fetch_fn, topic=topic or knowledge_point,
-                stage=stage, difficulty=difficulty, count=count,
+        # ①②③ 真题链：web 搜真题 → jszkk 免费题库 → 火花 K12（共享助手，诊断同链）
+        if source in ("auto", "web", "bank") and (topic or knowledge_point):
+            questions, source_note = await find_real_questions_via_ctx(
+                ctx, llm, topic=topic or knowledge_point, stage=stage,
+                difficulty=difficulty, count=count, source=source,
             )
-            if questions:
-                source_note = "真题（网上找的）· " + source_note
-
-        # ② 免费题库 API：jszkk 全能搜题（免鉴权；仅在 web 搜不到时调用）
-        if not questions and source in ("auto", "bank") and (topic or knowledge_point):
-            keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
-            found = await asyncio.to_thread(quiz_svc.search_jszkk, keyword, count)
-            if found:
-                questions = found
-                source_note = "免费题库（jszkk 全能搜题）"
-        # ③ 付费题库 API：火花数据 K12（最后兜底，¥5/100 次——省着用，仅 web+jszkk 都无结果时调用）
-        qbank_spec = ctx.config.models.qbank if ctx.config.models else None
-        qbank_key = (qbank_spec.api_key or "").strip() if qbank_spec else ""
-        if not questions and qbank_key and source in ("auto", "bank") and (topic or knowledge_point):
-            keyword = (knowledge_point or topic).split("/")[-1].strip() or topic
-            try:
-                found = await asyncio.to_thread(
-                    quiz_svc.search_huohua,
-                    keyword,
-                    count,
-                    api_key=qbank_key,
-                    subject=(knowledge_point or topic).split("/")[0].strip(),
-                    stage=stage,
-                )
-            except Exception as exc:
-                found = []
-                source_note = f"火花题库调用失败（{str(exc)[:60]}），已跳过"
-            if found:
-                questions = found
-                source_note = "在线题库（火花数据 K12）"
 
         # ④ 兜底/指定：LLM 智能生成
         if not questions and source != "web":

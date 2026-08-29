@@ -5,10 +5,13 @@ from __future__ import annotations
 from typing import Any
 
 from kurotutor.agent.context import ToolContext
+from kurotutor.core import get_logger, log_event
 from kurotutor.core.errors import ToolError
 from kurotutor.services import diagnostic
 from kurotutor.services.llm import build_llm_provider
 from kurotutor.services.profile import ProfileService
+
+log = get_logger("diagnostic")
 
 _STAGE_MAP = {"primary": "小学", "junior": "初中", "senior": "高中", "university": "大学"}
 
@@ -25,7 +28,31 @@ async def diagnostic_start(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
 
     llm = build_llm_provider(ctx.config.models.llm)
     try:
-        questions = await diagnostic.start_diagnostic(llm, subject=subject, stage=stage, count=count)
+        # 优先真题链（web→jszkk→火花，与出题同链；用户定序）：诊断也是出新题
+        questions: list[dict[str, Any]] = []
+        source_note = ""
+        try:
+            from kurotutor.tools.quiz import find_real_questions_via_ctx
+
+            found, source_note = await find_real_questions_via_ctx(
+                ctx, llm, topic=f"{stage}{subject}摸底", stage=stage, count=count,
+            )
+            questions = diagnostic.adapt_real_questions(found, subject=subject, count=count)
+        except Exception as exc:  # 真题链任何故障都不阻塞诊断（回退生成）
+            log_event(log, f"诊断真题链失败，回退生成：{exc}", level="warning")
+            questions = []
+            source_note = ""
+        if questions and len(questions) < int(count):
+            # 真题不够：AI 生成补足到 count（真题优先、生成兜底，混排后按难度递进）
+            missing = int(count) - len(questions)
+            try:
+                extra = await diagnostic.start_diagnostic(llm, subject=subject, stage=stage, count=missing)
+            except Exception as exc:
+                log_event(log, f"诊断补题生成失败（已有 {len(questions)} 道真题）：{exc}", level="warning")
+                extra = []
+            questions = diagnostic.sort_by_difficulty(questions + extra)
+        if not questions:
+            questions = await diagnostic.start_diagnostic(llm, subject=subject, stage=stage, count=count)
     finally:
         await llm.aclose()
 
@@ -33,8 +60,9 @@ async def diagnostic_start(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         ctx,
         {"subject": subject, "stage": stage, "questions": questions},
     )
+    real_head = f"题目来源：{source_note}。" if questions and questions[0].get("real") else ""
     lines = [
-        f"📖 入学诊断开始（{subject} · {len(questions)} 题，由易到难）。"
+        f"📖 入学诊断开始（{subject} · {len(questions)} 题，由易到难）。{real_head}"
         "别有压力，这是为了摸清你的起点，好给你定制学习计划。把每题答案发给我（可以一起发）。"
     ]
     for i, q in enumerate(questions, 1):

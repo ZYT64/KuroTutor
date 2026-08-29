@@ -123,6 +123,13 @@ def test_diagnostic_full_flow(engine, registry, monkeypatch, tmp_path):
             pass
 
     monkeypatch.setattr(dg, "build_llm_provider", lambda spec: _Fake())
+    # 真题链打桩为「无结果」：诊断回退 AI 生成（原链路行为），且单测不触网
+    import kurotutor.tools.quiz as qz
+
+    async def _no_real(ctx, llm, **kw):
+        return [], "未找到合适真题"
+
+    monkeypatch.setattr(qz, "find_real_questions_via_ctx", _no_real)
     cfg = _cfg(tmp_path)
     ctx = _ctx(cfg, engine)
 
@@ -139,6 +146,118 @@ def test_diagnostic_full_flow(engine, registry, monkeypatch, tmp_path):
     from kurotutor.services.diagnostic import _load_active
 
     assert _load_active(ctx) is None
+
+
+# ---- 诊断真题链（adapt_real_questions + diagnostic_start 优先真题） ----------
+def test_adapt_real_questions():
+    from kurotutor.services.diagnostic import adapt_real_questions
+
+    raw = [
+        {"text": "难题", "answer": "42", "difficulty": "hard", "knowledge_point": "数学/函数/二次"},
+        {"text": "无答案题", "answer": "", "difficulty": "easy"},  # 判分需要答案 → 剔除
+        {"text": "基础题", "answer": "7", "difficulty": "easy"},
+        {"text": "中档题", "answer": "x=1", "difficulty": "unknown"},  # 非法难度 → medium
+        "不是字典",  # 非法条目 → 剔除
+    ]
+    out = adapt_real_questions(raw, subject="数学", count=4)
+    assert [q["difficulty"] for q in out] == ["easy", "medium", "hard"]  # 由易到难排序
+    assert all(q["real"] for q in out)
+    assert all(q["answer"] for q in out)
+    assert len(out) == 3
+    # count 截断
+    out2 = adapt_real_questions(raw, subject="数学", count=2)
+    assert len(out2) == 2 and out2[0]["difficulty"] == "easy"
+
+
+def test_diagnostic_start_prefers_real_questions(engine, registry, monkeypatch, tmp_path):
+    """真题链有结果时：诊断直接用真题（无答案的剔除），不再 AI 生成。"""
+    import kurotutor.tools.diagnostic as dg
+    import kurotutor.tools.quiz as qz
+
+    async def fake_chain(ctx, llm, **kw):
+        return (
+            [
+                {"text": "真题A", "answer": "3", "difficulty": "easy", "analysis": "口算"},
+                {"text": "真题B", "answer": "x=2", "difficulty": "hard"},
+                {"text": "真题C", "answer": "", "difficulty": "easy"},  # 无答案剔除
+            ],
+            "真题（网上找的）· 来自网页",
+        )
+
+    monkeypatch.setattr(qz, "find_real_questions_via_ctx", fake_chain)
+
+    class _NoLLM:  # 不应被调用
+        async def complete(self, *a, **kw):
+            raise AssertionError("真题足够时不应触发生成")
+
+        async def aclose(self):
+            pass
+
+    monkeypatch.setattr(dg, "build_llm_provider", lambda spec: _NoLLM())
+    cfg = _cfg(tmp_path)
+    ctx = _ctx(cfg, engine)
+
+    out = _run(registry.execute(ctx, "diagnostic_start", {"subject": "数学", "count": 2}))
+    assert "入学诊断开始" in out
+    assert "真题（网上找的）" in out
+    assert "真题A" in out and "真题B" in out
+    assert "真题C" not in out  # 无答案被剔除
+    # 存入 active 的是适配后的题（2 道、由易到难）
+    from kurotutor.services.diagnostic import _load_active
+
+    diag = _load_active(ctx)
+    assert diag is not None and len(diag["questions"]) == 2
+    assert [q["difficulty"] for q in diag["questions"]] == ["easy", "hard"]
+
+
+def test_diagnostic_tops_up_with_generated(engine, registry, monkeypatch, tmp_path):
+    """真题不足 count：AI 生成补足，混排后仍由易到难。"""
+    import json as _json
+
+    import kurotutor.tools.diagnostic as dg
+    import kurotutor.tools.quiz as qz
+
+    async def fake_chain(ctx, llm, **kw):
+        return ([{"text": "真题A", "answer": "3", "difficulty": "hard"}], "真题（网上找的）· 来自网页")
+
+    monkeypatch.setattr(qz, "find_real_questions_via_ctx", fake_chain)
+
+    GEN = _json.dumps(
+        {"questions": [
+            {"text": "生成A", "answer": "5", "analysis": "加法",
+             "knowledge_point": "数学/数/加", "difficulty": "easy"},
+            {"text": "生成B", "answer": "x=1", "analysis": "移项",
+             "knowledge_point": "数学/方程/一次", "difficulty": "medium"},
+        ]},
+        ensure_ascii=False,
+    )
+
+    class _Fake:
+        def __init__(self):
+            self.calls = 0
+
+        async def complete(self, messages, *, tools=None, temperature=0.7, max_tokens=None):
+            self.calls += 1
+            from kurotutor.services.llm import ChatResult
+
+            return ChatResult(content=GEN)
+
+        async def aclose(self):
+            pass
+
+    fake_llm = _Fake()
+    monkeypatch.setattr(dg, "build_llm_provider", lambda spec: fake_llm)
+    cfg = _cfg(tmp_path)
+    ctx = _ctx(cfg, engine)
+
+    _run(registry.execute(ctx, "diagnostic_start", {"subject": "数学", "count": 3}))
+    assert fake_llm.calls == 1  # 只为补足缺口调了 1 次生成
+    from kurotutor.services.diagnostic import _load_active
+
+    diag = _load_active(ctx)
+    texts = [q["text"] for q in diag["questions"]]
+    assert texts == ["生成A", "生成B", "真题A"]  # 由易到难：easy→medium→hard（真题排最后）
+    assert diag["questions"][0].get("real") is not True and diag["questions"][2].get("real") is True
 
 
 # ---- 目标/打卡（goal.py 集成） ------------------------------------------------

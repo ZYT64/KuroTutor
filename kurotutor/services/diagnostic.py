@@ -16,6 +16,46 @@ from kurotutor.storage import WorkingContext, session_scope
 
 _KEY = "active_diagnostic"
 
+_DIFF_ORDER = {"easy": 0, "medium": 1, "hard": 2}
+
+
+def sort_by_difficulty(questions: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """按难度由易到难排序（未知难度视为 medium，排序稳定）。"""
+    return sorted(
+        questions,
+        key=lambda q: _DIFF_ORDER.get(str(q.get("difficulty") or "medium").strip().lower(), 1),
+    )
+
+
+def adapt_real_questions(
+    questions: list[dict[str, Any]], *, subject: str, count: int
+) -> list[dict[str, Any]]:
+    """把真题链找来的题适配成诊断题结构（无答案的题剔除——判分需要标准答案），
+    按难度由易到难排序，超出 count 截断。"""
+    cleaned: list[dict[str, Any]] = []
+    for q in questions:
+        if not isinstance(q, dict):
+            continue
+        text = str(q.get("text") or "").strip()
+        answer = str(q.get("answer") or "").strip()
+        if not text or not answer:
+            continue
+        diff = str(q.get("difficulty") or "medium").strip().lower()
+        if diff not in _DIFF_ORDER:
+            diff = "medium"
+        cleaned.append(
+            {
+                "text": text,
+                "answer": answer,
+                "analysis": str(q.get("analysis") or "").strip(),
+                "knowledge_point": str(q.get("knowledge_point") or f"{subject}/综合").strip(),
+                "difficulty": diff,
+                "real": True,
+            }
+        )
+    cleaned.sort(key=lambda q: _DIFF_ORDER[q["difficulty"]])
+    return cleaned[:count]
+
 _GEN_PROMPT = (
     "你是{stage}{subject}老师，要给一位新学生做**入学诊断**（摸底）。请出 {count} 道**由易到难**的诊断题：\n"
     "1. 覆盖「{subject}」本学段的核心基础考点，从简单计算/概念到综合应用逐级递进；\n"

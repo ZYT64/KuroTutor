@@ -257,7 +257,9 @@ async def find_real_questions(
     query = f"{topic} 真题 答案 解析 {stage}"
     hits = await asyncio.to_thread(search_fn, query, 6)
     if not hits:
-        hits = await asyncio.to_thread(search_fn, f"{topic} 中考真题", 6)
+        # 备用词按学段：初中贴中考真题、高中贴高考真题，其余学段退回通用词
+        exam = "中考" if "初" in stage else ("高考" if "高" in stage else "真题")
+        hits = await asyncio.to_thread(search_fn, f"{topic} {exam}真题", 6)
     if not hits:
         return [], "搜索无结果"
     # 相关性过滤：标题/链接完全不含主题关键词（前 2 字）的结果视为搜索垃圾
