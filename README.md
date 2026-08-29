@@ -81,4 +81,4 @@ kuro export report <学生>     # 导出学习报告
 
 ## 许可
 
-[MIT](LICENSE)。学生数据只存在部署者自己的服务器上，提供导出和删除接口。
+[MIT](LICENSE)
