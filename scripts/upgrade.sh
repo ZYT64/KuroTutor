@@ -33,7 +33,8 @@ docker compose up -d kuro
 
 echo "── 5/5 健康检查"
 sleep 20
-if docker compose ps kuro | grep -q "running"; then
+STATUS=$(docker inspect -f '{{.State.Status}}' kurotutor 2>/dev/null || echo unknown)
+if [ "$STATUS" = "running" ]; then
   echo "✅ 更新完成，服务运行中。最近日志："
   docker compose logs --tail 5 kuro
 else
