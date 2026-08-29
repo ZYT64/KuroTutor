@@ -33,8 +33,8 @@ def build_review_text(engine: Any, student_id: int) -> str | None:
     return "\n".join(lines)
 
 
-def make_handlers(engine: Any, deliver: Callable[[str, str], None]) -> dict[str, Callable[[Any], None]]:
-    """构造 process_due 的分发表。``deliver(external_id, text)`` 负责发送。"""
+def make_handlers(engine: Any, deliver: Callable[..., None]) -> dict[str, Callable[[Any], None]]:
+    """构造 process_due 的分发表。``deliver(external_id, text, file_path="")`` 负责发送。"""
 
     def handle_review(task: Any) -> None:
         if task.student_id is None:
@@ -97,13 +97,15 @@ def make_handlers(engine: Any, deliver: Callable[[str, str], None]) -> dict[str,
         try:
             from kurotutor.services.classroom import start_class_text
 
-            text = start_class_text(engine, iid)
+            pushed = start_class_text(engine, iid)
         except Exception as exc:
             log_event(log, "class start failed", level="warning", instance=iid, error=repr(exc))
             return
         external_id = _external_id(engine, task.student_id)
-        if external_id and text:
-            deliver(external_id, text)
+        if external_id and pushed:
+            text = pushed["text"] if isinstance(pushed, dict) else pushed
+            file_path = (pushed.get("docx_path") or "") if isinstance(pushed, dict) else ""
+            deliver(external_id, text, file_path=file_path)
 
     def handle_class_end(task: Any) -> None:
         """到点下课：课后闭环（总结/作业/进度/下一节排课）。"""

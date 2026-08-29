@@ -139,6 +139,8 @@ def test_prepare_and_end_closure(engine, monkeypatch, tmp_path):
 
     fake = _FakeLLM([LESSON, SUMMARY])
     monkeypatch.setattr("kurotutor.services.llm.build_llm_provider", lambda spec: fake)
+    # 测试不触真实 OpenMAIC（prepare_course 读全局配置，可能带真实访问码）
+    monkeypatch.setattr(cl, "_start_openmaic_classroom", lambda *a, **kw: None)
 
     cfg = _cfg(tmp_path)
     ctx = _ctx(cfg, engine)
@@ -163,8 +165,10 @@ def test_prepare_and_end_closure(engine, monkeypatch, tmp_path):
     with session_scope(engine) as db:
         assert db.get(CourseInstance, iid).status == CourseStatus.READY
 
-    text = cl.start_class_text(engine, iid)
+    pushed = cl.start_class_text(engine, iid)
+    text = pushed["text"]
     assert "上课啦" in text and "二次函数" in text
+    assert pushed["docx_path"]  # 讲义同时产出了 Word 版
     with session_scope(engine) as db:
         assert db.get(CourseInstance, iid).status == CourseStatus.ONGOING
 

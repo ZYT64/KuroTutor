@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import json
+import threading
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -243,9 +244,31 @@ def prepare_course(
     md = _render_lesson_md(topic, subject, lesson)
     lecture_path.write_text(md, encoding="utf-8")
 
+    # 讲义 Word 版（QQ 发文件用；docs 不可用时保留 md 不阻塞备课）
+    docx_path = lessons / f"{safe}.docx"
+    try:
+        from kurotutor.services.docs import write_document
+
+        write_document(str(docx_path), md)
+    except Exception as exc:  # LibreOffice/依赖缺失等，降级为仅 md
+        log_event(log, "lecture docx render failed, keep md only", level="warning", error=str(exc))
+        docx_path = None
+
+    # OpenMAIC 互动课堂：提交生成任务（托管站约 3-10 分钟），后台轮询回填链接
+    classroom_note = ""
+    openmaic_job = None
+    try:
+        openmaic_job = _start_openmaic_classroom(engine, instance_id, cfg, topic, subject, stage_cn, md)
+    except Exception as exc:
+        log_event(log, "openmaic submit failed (prepare unaffected)", level="warning", error=str(exc))
+    if openmaic_job:
+        classroom_note = "互动课堂正在生成，开课时把链接发给你。"
+
     with session_scope(engine) as db:
         inst = db.get(CourseInstance, instance_id)
         inst.lecture_path = str(lecture_path)
+        if docx_path is not None:
+            inst.lecture_docx_path = str(docx_path)
         inst.status = CourseStatus.READY
         db.add(inst)
 
@@ -253,9 +276,64 @@ def prepare_course(
     start_at = fmt_local(_instance_start(engine, instance_id))
     text = (
         f"📚 备课完成！{greet}，你「{topic}」的课已经准备好了（{start_at} 上课）。\n"
-        f"讲义已生成：{lecture_path.name}。上课时我会按讲义带你过一遍，还有例题和课堂练习。"
+        f"讲义已生成：{docx_path.name if docx_path else lecture_path.name}。"
+        + (classroom_note + " " if classroom_note else "")
+        + "上课时我会按讲义带你过一遍，还有例题和课堂练习。"
     )
-    return {"text": text, "lecture_path": str(lecture_path), "lesson": lesson}
+    return {
+        "text": text,
+        "lecture_path": str(lecture_path),
+        "docx_path": str(docx_path) if docx_path else "",
+        "lesson": lesson,
+    }
+
+
+def _start_openmaic_classroom(
+    engine: Any,
+    instance_id: int,
+    cfg: Any,
+    topic: str,
+    subject: str,
+    stage_cn: str,
+    lecture_md: str,
+) -> dict[str, Any] | None:
+    """提交 OpenMAIC 课堂生成任务；未配置访问码返回 None。成功后起后台线程轮询回填链接。"""
+    maic = getattr(cfg, "openmaic", None)
+    if maic is None or not (maic.access_code or "").strip():
+        return None
+    from kurotutor.services import openmaic as maic_svc
+    from kurotutor.services.llm import build_llm_provider
+
+    # 用主模型把讲义压成 500 字内的课程简介作为生成要求（省配额、聚焦课堂）
+    brief_prompt = (
+        f"把下面这份{stage_cn}{subject}讲义压缩成 300 字以内的课堂生成简介，"
+        "包含：课题、教学目标、核心知识点、例题与练习安排。直接输出正文。\n\n" + lecture_md[:3000]
+    )
+    llm = build_llm_provider(cfg.models.llm)
+    try:
+        r = asyncio.run(_asyncio_call(llm, brief_prompt))
+        brief = (r.content or "").strip()[:1500] or f"{stage_cn}{subject}课程：{topic}"
+    finally:
+        with_suppress_close(llm)
+
+    job = asyncio.run(maic_svc.submit_generation(maic, requirement=brief))
+
+    def _poll_and_save() -> None:
+        try:
+            result = asyncio.run(maic_svc.poll_generation(maic, str(job.get("pollUrl") or job["jobId"])))
+            url = maic_svc.extract_classroom_url(result, maic.base_url)
+            if url:
+                with session_scope(engine) as db:
+                    inst = db.get(CourseInstance, instance_id)
+                    if inst:
+                        inst.classroom_url = url
+                        db.add(inst)
+        except Exception as exc:
+            log_event(log, "openmaic generation incomplete", level="warning",
+              instance=instance_id, error=str(exc))
+
+    threading.Thread(target=_poll_and_save, name=f"openmaic-{instance_id}", daemon=True).start()
+    return job
 
 
 def _instance_start(engine: Any, instance_id: int) -> datetime:
@@ -303,8 +381,8 @@ def with_suppress_close(llm):
 # ---- 开课 / 课后闭环 ---------------------------------------------------------
 
 
-def start_class_text(engine: Any, instance_id: int) -> str | None:
-    """开课推送文本：讲义要点 + 今日目标。无讲义时给兜底文本。"""
+def start_class_text(engine: Any, instance_id: int) -> dict[str, str] | None:
+    """开课推送：讲义要点 + 今日目标 + 互动课堂链接。返回 {text, docx_path}；无课返回 None。"""
     with session_scope(engine) as db:
         inst = db.get(CourseInstance, instance_id)
         if inst is None:
@@ -313,6 +391,8 @@ def start_class_text(engine: Any, instance_id: int) -> str | None:
         student = db.get(Student, inst.student_id)
         nickname = (student.nickname if student else "") or "同学"
         lecture = Path(inst.lecture_path) if inst.lecture_path else None
+        docx_path = inst.lecture_docx_path or ""
+        classroom_url = inst.classroom_url or ""
     md = lecture.read_text(encoding="utf-8") if lecture and lecture.exists() else ""
     points = [ln.lstrip("- ").strip() for ln in md.splitlines() if ln.startswith("- ")][:5]
     goal_lines = [ln.replace("- 🎯", "").replace("-", "").strip() for ln in md.splitlines() if "🎯" in ln][:2]
@@ -321,12 +401,32 @@ def start_class_text(engine: Any, instance_id: int) -> str | None:
         text += "目标：" + "；".join(goal_lines) + "\n"
     if points:
         text += "今天的内容：\n" + "\n".join(f"· {p}" for p in points) + "\n"
+    if classroom_url:
+        text += f"🏫 互动课堂（AI 老师+AI 同学陪你学）：{classroom_url}\n"
+    elif inst_has_pending_maic(engine, instance_id):
+        text += "🏫 互动课堂还在生成中，稍后会补发链接。\n"
     text += "准备好了回复我，我们开始。有不懂的随时打断我。"
     with session_scope(engine) as db:
         inst = db.get(CourseInstance, instance_id)
         inst.status = CourseStatus.ONGOING
         db.add(inst)
-    return text
+    return {"text": text, "docx_path": docx_path}
+
+
+def inst_has_pending_maic(engine: Any, instance_id: int) -> bool:
+    """该课是否配了 OpenMAIC 但链接尚未回填（生成中）。"""
+    maic_cfg = getattr(load_config_safe(), "openmaic", None)
+    if maic_cfg is None or not (maic_cfg.access_code or "").strip():
+        return False
+    with session_scope(engine) as db:
+        inst = db.get(CourseInstance, instance_id)
+        return bool(inst and not inst.classroom_url)
+
+
+def load_config_safe() -> Any:
+    from kurotutor.config.loader import load_config
+
+    return load_config()
 
 
 def end_class(engine: Any, instance_id: int, *, llm_spec: Any = None) -> str | None:

@@ -13,7 +13,9 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
+from pathlib import Path
 from typing import Any
 
 from kurotutor.adapters.base import ChannelAdapter
@@ -187,8 +189,40 @@ class QQBotpyChannel(ChannelAdapter):
             log_event(log, "image reply not yet supported via botpy media upload", count=len(out.images))
 
     async def send(self, student_external_id: str, out: OutboundMessage) -> None:
-        # 主动推送：QQ 私信主动消息每日每人限量 2 条，且需 botpy create_dms 会话；此处仅记录，不擅自外发
-        log_event(log, "qq proactive send not used", student=student_external_id)
+        """主动推送（开课/复习/周报等）。
+
+        C2C 主动消息有官方额度限制（每用户每日少量），失败时记录日志不重试轰炸。
+        讲义文件走富媒体接口（file_type=4），base64 直传，失败降级为纯文本。
+        """
+        if self._client is None:
+            log_event(log, "qq proactive send skipped: client not ready", student=student_external_id)
+            return
+        from botpy.http import Route
+
+        try:
+            if out.lecture_path and Path(out.lecture_path).exists():
+                try:
+                    file_b64 = base64.b64encode(Path(out.lecture_path).read_bytes()).decode()
+                    await self._client.http.request(
+                        Route("POST", "/v2/users/{openid}/files", openid=student_external_id),
+                        json={"file_type": 4, "file_data": file_b64, "srv_send_msg": True},
+                    )
+                    log_event(log, "qq file sent", student=student_external_id,
+                              file=Path(out.lecture_path).name)
+                except Exception as exc:
+                    log_event(log, "qq file send failed, fallback to text", level="warning",
+                              file=Path(out.lecture_path).name, error=repr(exc))
+                    out.text = (out.text + f"\n📎 讲义文件「{Path(out.lecture_path).name}」生成好了，"
+                                "但这条通道暂时发不了文件，需要的话说一声我用别的方式给你。").strip()
+            if out.text:
+                await self._client.http.request(
+                    Route("POST", "/v2/users/{openid}/messages", openid=student_external_id),
+                    json={"content": out.text[:2000], "msg_type": 0, "msg_id": "", "msg_seq": 1},
+                )
+                log_event(log, "qq proactive push sent", student=student_external_id)
+        except Exception as exc:
+            log_event(log, "qq proactive push failed", level="warning",
+                      student=student_external_id, error=repr(exc))
 
     async def close(self) -> None:
         if self._client is not None:

@@ -63,6 +63,18 @@ class ChannelConfig(BaseModel):
     secret: str = ""
 
 
+class OpenMAICConfig(BaseModel):
+    """OpenMAIC 互动课堂（THU-MAIC/OpenMAIC）接入配置。
+
+    托管模式：base_url 固定 open.maic.chat，access_code 为官网生成的 sk- 访问码。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    base_url: str = "https://open.maic.chat"
+    access_code: str = ""
+
+
 class PermissionsConfig(BaseModel):
     """Agent 沙箱权限配置（自动单模式）。
 
@@ -118,6 +130,7 @@ class AppConfig(BaseModel):
 
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
     models: ModelsConfig | None = None
+    openmaic: OpenMAICConfig = Field(default_factory=OpenMAICConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     kb: KbConfig = Field(default_factory=KbConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

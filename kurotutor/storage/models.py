@@ -185,7 +185,9 @@ class CourseInstance(SQLModel, table=True):
     title: str = ""
     start_at: datetime = Field(index=True)
     end_at: datetime | None = None
-    lecture_path: str = ""  # 备课讲义落盘路径
+    lecture_path: str = ""  # 备课讲义落盘路径（md）
+    lecture_docx_path: str = ""  # 讲义 Word 版（QQ 发文件用）
+    classroom_url: str = ""  # OpenMAIC 互动课堂链接（生成完成后回填）
     status: str = CourseStatus.PLANNED
     created_at: datetime = Field(default_factory=utcnow)
 

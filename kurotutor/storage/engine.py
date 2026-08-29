@@ -44,8 +44,28 @@ def build_engine(db_url: str) -> object:
 
 
 def init_db(engine: object) -> None:
-    """建表（幂等）。首次启动时调用。"""
+    """建表（幂等）。首次启动时调用；对已存在的表补齐新增列（轻量迁移）。"""
     SQLModel.metadata.create_all(engine)
+    _migrate(engine)
+
+
+def _migrate(engine: object) -> None:
+    """新增列的补齐（SQLite 用 PRAGMA 检查列是否存在）。"""
+    migrations = {
+        "courseinstance": {
+            "classroom_url": "VARCHAR DEFAULT ''",
+            "lecture_docx_path": "VARCHAR DEFAULT ''",
+        },
+    }
+    with engine.connect() as conn:
+        for table, cols in migrations.items():
+            existing = {row[1] for row in conn.exec_driver_sql(f"PRAGMA table_info({table})")}
+            if not existing:
+                continue  # 表不存在，create_all 已按最新结构建好
+            for col, ddl in cols.items():
+                if col not in existing:
+                    conn.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
+        conn.commit()
 
 
 @contextmanager

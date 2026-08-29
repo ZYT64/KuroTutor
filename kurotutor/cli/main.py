@@ -34,6 +34,9 @@ from kurotutor.cli import (
 from kurotutor.cli import (
     serve as serve_cmd,
 )
+from kurotutor.cli import (
+    upgrade as upgrade_cmd,
+)
 
 # 保证 Windows 控制台按 UTF-8 渲染中文（避免 GBK 下乱码），并让管道输入按 UTF-8 解码
 with contextlib.suppress(AttributeError, ValueError):
@@ -59,6 +62,7 @@ app.add_typer(schedule_cmd.app, name="schedule", help="定时任务管理")
 # 单一功能命令（非命令组）
 app.command("serve", help="启动服务")(serve_cmd.serve_command)
 app.command("doctor", help="健康检查")(doctor_cmd.doctor_command)
+app.command("upgrade", help="更新到最新版本（git 拉取 + 容器重建重启）")(upgrade_cmd.upgrade_command)
 
 
 @app.callback()

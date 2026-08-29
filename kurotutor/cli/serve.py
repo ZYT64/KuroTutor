@@ -49,10 +49,11 @@ def serve_command(
 
         # 推送回调：把到期任务（复习/提醒）经渠道发给学生。deliver 在调度线程被调，
         # 用 call_soon_threadsafe 把发送交回主事件循环。
-        def deliver(external_id: str, text: str) -> None:
+        def deliver(external_id: str, text: str, file_path: str = "") -> None:
             async def _send() -> None:
                 try:
-                    await adapter.send(external_id, OutboundMessage(text=text))
+                    out = OutboundMessage(text=text, lecture_path=file_path)
+                    await adapter.send(external_id, out)
                 except Exception as exc:
                     log_event(log, "push send failed", level="warning", error=repr(exc))
 
