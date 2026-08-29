@@ -13,5 +13,5 @@ PY=".venv/Scripts/python.exe"        # Windows git-bash
 docker build \
   --build-arg HTTP_PROXY="" --build-arg HTTPS_PROXY="" \
   --build-arg http_proxy="" --build-arg https_proxy="" \
-  -t kurotutor:latest "$@"
+  -t kurotutor:latest . "$@"
 echo "构建完成：kurotutor:latest"
