@@ -41,3 +41,6 @@ dist/
 *.whl
 runs/
 weights/
+
+# 评测运行产物
+evals/last_report.json
