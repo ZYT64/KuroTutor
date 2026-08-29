@@ -13,7 +13,7 @@ from sqlmodel import select
 
 from kurotutor.agent.context import ToolContext
 from kurotutor.core.errors import ToolError
-from kurotutor.services.vision import build_vision_provider, extract_json
+from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
 from kurotutor.storage import NotebookEntry, NotebookSource, session_scope
 
 # 视觉解析提示词：只输出 JSON
@@ -72,7 +72,7 @@ async def parse_photo(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             cause="models.vision 缺失",
             fix="在 kuro.json 中配置 models.vision",
         )
-    provider = build_vision_provider(ctx.config.models.vision)
+    provider = build_vision_provider(resolve_vision_spec(ctx.config))
     try:
         raw = await provider.understand(path, _PARSE_PROMPT, detail="high")
     except Exception as exc:

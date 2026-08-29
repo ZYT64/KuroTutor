@@ -33,6 +33,10 @@ _TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
 _MAX_RETRIES = 2
 
 
+class _RetryableStatus(Exception):
+    """流式路径遇到 429/5xx 的内部标记，交给 ``complete`` 重试循环统一退避。"""
+
+
 @dataclass
 class ToolCall:
     """模型发起的一次工具调用。"""
@@ -163,6 +167,10 @@ class OpenAICompatProvider(LLMProvider):
         last_err: Exception | None = None
         for attempt in range(_MAX_RETRIES + 1):
             try:
+                if not tools:
+                    # 长文本生成走流式：GLM 等厂商非流式首字节可达 2-3 分钟，会撞 read
+                    # 超时；流式首 token 秒回，read 超时只约束块间隔，长生成不再失败。
+                    return await self._complete_streaming(url, body)
                 resp = await self._client.post(url, json=body)
                 if resp.status_code == 429 or resp.status_code >= 500:
                     last_err = ProviderError(
@@ -182,6 +190,16 @@ class OpenAICompatProvider(LLMProvider):
                     )
                 data = resp.json()
                 return self._parse(data)
+            except _RetryableStatus as exc:
+                last_err = ProviderError(
+                    "模型服务暂时不可用",
+                    cause=str(exc),
+                    fix="稍后重试，或检查模型配额/余额",
+                )
+                if attempt < _MAX_RETRIES:
+                    await self._sleep_backoff(attempt)
+                    continue
+                raise last_err from exc
             except (httpx.RequestError, httpx.TimeoutException) as exc:
                 last_err = ProviderError(
                     "无法连接模型服务",
@@ -193,6 +211,46 @@ class OpenAICompatProvider(LLMProvider):
                     continue
                 raise last_err from exc
         raise last_err or ProviderError("模型调用失败", fix="请检查配置")  # pragma: no cover
+
+    async def _complete_streaming(self, url: str, body: dict[str, Any]) -> ChatResult:
+        """流式接收一次补全（无 tools 调用路径），跨块累积内容与用量。"""
+        stream_body = {**body, "stream": True}
+        parts: list[str] = []
+        finish = "stop"
+        usage: dict[str, Any] = {}
+        async with self._client.stream("POST", url, json=stream_body) as resp:
+            if resp.status_code == 429 or resp.status_code >= 500:
+                raise _RetryableStatus(f"HTTP {resp.status_code}")
+            if resp.status_code != 200:
+                text = (await resp.aread()).decode("utf-8", errors="replace")
+                raise ProviderError(
+                    "模型请求失败",
+                    cause=f"HTTP {resp.status_code}: {text[:200]}",
+                    fix="检查模型配置（provider/model/base_url/api_key）是否正确",
+                )
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                chunk = line[len("data:") :].strip()
+                if chunk == "[DONE]":
+                    break
+                try:
+                    data = json.loads(chunk)
+                except json.JSONDecodeError:
+                    continue  # 跳过不完整/心跳块
+                choice = (data.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
+                if delta.get("content"):
+                    parts.append(delta["content"])
+                if choice.get("finish_reason"):
+                    finish = choice["finish_reason"]
+                if data.get("usage"):
+                    usage = data["usage"]
+        return ChatResult(
+            content="".join(parts),
+            finish_reason=finish,
+            usage={k: int(v) for k, v in usage.items() if isinstance(v, (int, float))},
+        )
 
     def _parse(self, data: dict[str, Any]) -> ChatResult:
         choices = data.get("choices") or []

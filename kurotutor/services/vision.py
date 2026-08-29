@@ -188,6 +188,24 @@ _PROVIDERS: dict[str, type[VisionProvider]] = {
 }
 
 
+def resolve_vision_spec(config: Any) -> ModelSpec:
+    """视觉模型解析：未配置 ``models.vision`` 时回落主模型。
+
+    主流文本模型（GLM-5.3-flash 等）本身是多模态模型，未单独配置视觉时
+    直接用主模型看图，保证零配置即可用。
+    """
+    vision = getattr(config.models, "vision", None)
+    if vision is not None:
+        return vision
+    if config.models is None or config.models.llm is None:
+        raise ProviderError(
+            "视觉模型不可用",
+            cause="models.vision 与 models.llm 均未配置",
+            fix="在 kuro.json 配置 models.vision 或 models.llm",
+        )
+    return config.models.llm
+
+
 def build_vision_provider(spec: ModelSpec) -> VisionProvider:
     """按配置里的 provider 字段实例化视觉 Provider。"""
     provider_cls = _PROVIDERS.get(spec.provider.lower())

@@ -29,7 +29,7 @@ from kurotutor.services.layout import (
     question_split_cut,
     stitch_crops,
 )
-from kurotutor.services.vision import build_vision_provider, extract_json
+from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
 from kurotutor.storage import WorkingContext, session_scope
 
 log = get_logger("image_split")
@@ -253,7 +253,7 @@ async def _judge_continuous(ctx: ToolContext, stitched_path: str) -> bool | None
     """视觉模型二元判断拼接图是否为同一题的连续两部分。无法判断返回 None。"""
     if ctx.config.models is None or ctx.config.models.vision is None:
         return None
-    provider = build_vision_provider(ctx.config.models.vision)
+    provider = build_vision_provider(resolve_vision_spec(ctx.config))
     try:
         raw = await provider.understand(stitched_path, _CONTINUOUS_PROMPT)
     except Exception as exc:
@@ -452,7 +452,7 @@ async def _crop_via_layout(ctx: ToolContext, path: str) -> list[str]:
 async def _transcribe_only(ctx: ToolContext, path: str) -> str:
     if ctx.config.models is None or ctx.config.models.vision is None:
         raise ToolError("未配置视觉模型，无法切题", fix="配置 models.vision")
-    provider = build_vision_provider(ctx.config.models.vision)
+    provider = build_vision_provider(resolve_vision_spec(ctx.config))
     try:
         raw = await provider.understand(path, _SPLIT_PROMPT, detail="high")
     except Exception as exc:

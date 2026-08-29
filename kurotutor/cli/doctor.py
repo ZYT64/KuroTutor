@@ -9,6 +9,7 @@ from rich import box
 from rich.table import Table
 
 from kurotutor.config.loader import default_config_path
+from kurotutor.services.vision import resolve_vision_spec
 from kurotutor.storage import build_db_url, build_engine, init_db, session_scope
 
 from . import ui
@@ -47,9 +48,11 @@ def _check_config(config) -> tuple[str, str]:
 
 
 def _check_vision(config) -> tuple[str, str]:
-    if config.models is None or config.models.vision is None:
-        return "警告", "未配置视觉模型（拍照解题/批改不可用）"
-    spec = config.models.vision
+    if config.models is None or config.models.llm is None:
+        return "警告", "未配置模型（视觉能力不可用）"
+    spec = resolve_vision_spec(config)
+    if spec is config.models.llm and config.models.vision is None:
+        return "通过", f"未单独配置视觉模型，回落主模型 {spec.model}（多模态）"
     if not spec.api_key:
         return "警告", f"provider={spec.provider} 但 api_key 为空"
     return "待验证", f"provider={spec.provider} model={spec.model}（需联网+密钥）"

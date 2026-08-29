@@ -15,7 +15,7 @@ from typing import Any
 from kurotutor.agent.context import ToolContext
 from kurotutor.core.errors import ToolError
 from kurotutor.services.profile import ProfileService
-from kurotutor.services.vision import build_vision_provider, extract_json
+from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
 from kurotutor.tools.wrongbook import record_wrong_question
 
 _GRADE_PROMPT = (
@@ -34,7 +34,7 @@ def _build_vision(ctx: ToolContext):
     if ctx.config.models is None or ctx.config.models.vision is None:
         raise ToolError("未配置视觉模型，无法批改作业", cause="models.vision 缺失", fix="配置 models.vision")
     try:
-        return build_vision_provider(ctx.config.models.vision)
+        return build_vision_provider(resolve_vision_spec(ctx.config))
     except Exception as exc:
         raise ToolError(str(exc), fix="检查 models.vision 配置") from exc
 

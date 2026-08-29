@@ -22,7 +22,7 @@ from sqlmodel import delete, select
 from kurotutor.agent.context import ToolContext
 from kurotutor.core.errors import ToolError
 from kurotutor.services.profile import ProfileService, WrongbookPolicy
-from kurotutor.services.vision import build_vision_provider, extract_json
+from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
 from kurotutor.storage import PendingRecord, WorkingContext, session_scope
 from kurotutor.tools import kb, wrongbook
 
@@ -61,7 +61,7 @@ def _vision_from_tool_error(ctx: ToolContext):
             fix="在 kuro.json 中配置 models.vision（如 deepseek-v4-flash-vision-exp）",
         )
     try:
-        return build_vision_provider(ctx.config.models.vision)
+        return build_vision_provider(resolve_vision_spec(ctx.config))
     except Exception as exc:
         raise ToolError(str(exc), fix="检查 models.vision 的 provider/model/api_key 配置") from exc
 

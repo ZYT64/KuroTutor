@@ -19,7 +19,7 @@ from kurotutor.core.errors import ToolError
 from kurotutor.services import quiz as quiz_svc
 from kurotutor.services.llm import build_llm_provider
 from kurotutor.services.plot import plot_functions
-from kurotutor.services.vision import build_vision_provider, extract_json
+from kurotutor.services.vision import build_vision_provider, extract_json, resolve_vision_spec
 from kurotutor.storage import KnowledgePoint, WorkingContext, session_scope
 from kurotutor.tools.wrongbook import record_wrong_question
 
@@ -371,7 +371,7 @@ async def _verify_quiz_images(ctx: ToolContext, questions: list[dict[str, Any]])
 
     视觉调用有上限（8 次）；校验调用失败时保留原图（宁滥勿缺，题目本身不受影响）。
     """
-    vision = build_vision_provider(ctx.config.models.vision)
+    vision = build_vision_provider(resolve_vision_spec(ctx.config))
     checked = 0
     try:
         for q in questions:
