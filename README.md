@@ -1,89 +1,87 @@
 <div align="center">
 
-# KuroTutor 🌙
+# KuroTutor
 
-**QQ 私聊里的 24 小时 AI 私人老师**
-
-_全科辅导（小学到大学）· 像真人私教一样教，不像题库一样甩答案_
+**QQ 私聊里的 AI 家教**
 
 [![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
-[![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?style=flat-square&logo=docker&logoColor=white)](#docker-部署)
-[![QQ 机器人](https://img.shields.io/badge/QQ-官方%20SDK-12B7F5?style=flat-square&logo=tencentqq&logoColor=white)](#接入-qq)
+[![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?style=flat-square&logo=docker&logoColor=white)](#docker)
+[![QQ](https://img.shields.io/badge/QQ-%E5%AE%98%E6%96%B9%20SDK-12B7F5?style=flat-square&logo=tencentqq&logoColor=white)](#接入-qq)
 
 </div>
 
----
+KuroTutor 接入 QQ 私聊，做一个随叫随到的家教。学生把不会的题目拍下来发过去，它先讲思路，学生跟上了再对答案；做错的题会记入错题本，隔几天再推回来重做。整卷试卷可以切成一题一图存进题集，之后按知识点组卷导出。
 
-KuroTutor 是一个跑在自己服务器上的 AI 家教机器人。学生在 QQ 里像跟老师聊天一样提问，它会讲解题目、批改作业、记住每道错题并安排复习、定期上课——所有这些都是通过自然对话完成的，没有菜单和指令。
+## 功能
 
-## ✨ 它能做什么
+- **拍照解题**：视觉模型读题，引导式讲解，按学段（小学到大学）调整讲法与深度
+- **作业批改**：整页作业逐题判分，错因归类，错题自动入库
+- **错题复习**：错题按间隔重复排期，到期主动推送复测
+- **出题**：根据学生薄弱点和校内进度出题，优先从网上找真题（含配图），也可以直接画函数图像辅助讲解
+- **自动切题**：多模态视觉识别，整卷切成单题图片；支持透视矫正和跨页题目缝合
+- **排课**：单次课和系列课，到点自动备课、开课提醒，课后自动总结并布置作业
+- **学习周报**：每周汇总练习、错题、掌握度变化，可导出 Word
+- **入学诊断**：新生摸底测试，判分后确定学习起点并建立画像
 
-- **📷 拍照解题**——发张题目照片，老师引导你思考，先给思路再对答案，而不是直接甩解析
-- **📝 作业批改**——整页作业拍一张，逐题判分、归因错因，错题自动记入错题本
-- **🔁 复习不遗忘**——错题按记忆曲线自动排期，到点主动推送复习
-- **🎯 个性化出题**——按你的水平和进度找真题练（自动从网上搜题、下载配图），也可画函数图辅助讲题
-- **✂️ 试卷变题库**——整张试卷自动切成一题一图（多模态视觉识别，支持歪图矫正、跨页缝合），错题好题随时组卷导出 PDF/Word
-- **📅 定时上课**——约一节 1v1 小课，到点自动备课、开课提醒、课后总结布置作业
-- **📊 学习周报**——每周自动总结学习情况，生成 Word 报告
-- **🩺 入学诊断**——新学生先摸底测几分，定出学习起点，之后讲题、出题、排课都因人而异
+所有交互都在 QQ 对话里完成，没有菜单和指令，学生正常说话即可。
 
-## 🚀 快速开始
+## 安装
+
+需要 Python 3.11+。
 
 ```bash
-# ① 安装（需要 Python 3.11+）
 git clone https://github.com/your-org/kurotutor.git
 cd kurotutor
 python -m venv .venv
 .venv/Scripts/pip install -e .          # Windows；Linux/mac 用 .venv/bin/pip
+```
 
-# ② 初始化配置（交互式引导，填一个模型 API key 就能跑）
+初始化配置后即可在终端联调（没有模型密钥也可以选离线演示模式）：
+
+```bash
 kuro init
-
-# ③ 在终端里先试试（扮演学生和老师聊天，Ctrl+C 退出）
 kuro serve --channel console
 ```
 
-没有模型密钥也能先跑通：`kuro init` 时选择离线演示模型即可体验完整对话链路。
+## 接入 QQ
 
-## 🔌 接入 QQ
+1. 在 [QQ 开放平台](https://q.qq.com)创建机器人，拿到 AppID 和 Secret
+2. `kuro init` 时填入，或直接编辑 `kuro.json` 的 `channel` 字段
+3. 启动 `kuro serve --channel qq`，在 QQ 里私聊机器人即可
 
-1. 在 [QQ 开放平台](https://q.qq.com)免费创建一个机器人，拿到 AppID 和 Secret
-2. 运行 `kuro init` 按引导填入
-3. 启动：`kuro serve --channel qq`，然后在 QQ 里搜索你的机器人，私聊即可
+## 配置
 
-## ⚙️ 配置
+配置在根目录的 `kuro.json`，`kuro init` 会生成模板（见 [`kuro.example.json`](kuro.example.json)）。
 
-所有配置都在项目根目录的 `kuro.json`（`kuro init` 自动生成）：
+文本模型是唯一必填项，填任意 OpenAI 兼容服务（GLM、DeepSeek、通义等）的 `base_url`、`model` 和 `api_key` 即可。视觉模型不填时自动使用主模型（主模型需支持图片）。搜索和题库 key 可选，用于出题时从网上找真题。
 
-| 配置 | 说明 |
-|---|---|
-| 模型 API key | **必填一项**。任意 OpenAI 兼容的大模型（GLM / DeepSeek / 通义等），填在 `models.llm` |
-| 视觉模型 | 看图解题用。主模型本身支持图片时可以不填，自动复用 |
-| 搜索 / 题库 | 可选。配了 Tavily key 搜题更稳；火花题库 key 作为搜题兜底 |
-| QQ 机器人 | 接 QQ 才需要 |
+密钥保存在本地 `kuro.json`，注意不要提交到代码仓库或分享给他人。
 
-> 🔒 密钥只保存在你本地的 `kuro.json`，请注意保管，不要把它提交到代码仓库或分享给他人。
-
-## 🐳 Docker 部署
-
-不想管 Python 环境的话，一条命令跑在 Docker 里（低配服务器、树莓派都能跑）：
+## Docker
 
 ```bash
 cp kuro.example.json kuro.json    # 填好密钥
-docker compose up -d              # 后台常驻，重启自动恢复
+docker compose up -d
 ```
 
-## 🧰 日常管理
-
-管理不靠网页，全在命令行：
+镜像支持 amd64 和 arm64，不依赖 GPU。数据和配置通过挂载卷持久化，容器重启后自动恢复。管理操作走 CLI：
 
 ```bash
-kuro doctor                   # 体检：配置/数据库/模型/渠道逐项诊断
-kuro student list             # 看有哪些学生、学得怎么样
-kuro export wrongbook <学生>  # 导出错题本
+docker compose run --rm cli kuro doctor
+docker compose run --rm cli kuro student list
 ```
 
-## 📄 许可
+## 常用命令
 
-[MIT](LICENSE) · 学生数据只存在你自己的服务器上
+```bash
+kuro doctor                   # 检查配置、数据库、模型、渠道
+kuro student list             # 学生列表
+kuro student show <id>        # 学情详情（画像、错题、进度）
+kuro export wrongbook <学生>  # 导出错题本
+kuro export report <学生>     # 导出学习报告
+```
+
+## 许可
+
+[MIT](LICENSE)。学生数据只存储在部署者自己的服务器上，提供导出和删除接口。
