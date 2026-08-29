@@ -104,10 +104,29 @@ def _norm_command_name(token: str) -> str:
 class Sandbox:
     """沙箱策略对象。持有配置与工作区根目录。"""
 
-    def __init__(self, config: AppConfig):
+    def __init__(self, config: AppConfig, student_id: int | None = None):
         self._config = config
         self.workspace = Path(config.workspace).resolve()
         self.workspace.mkdir(parents=True, exist_ok=True)
+        # 学生子作用域：多用户文件隔离（每个学生的产物互相不可见/不覆盖）
+        # student=None 时（无学生上下文，如 CLI 运维）退化为全局工作区
+        self.student_scope = f"u{student_id}" if student_id else ""
+
+    def student_path(self, rel: str | Path, *, for_write: bool = False) -> Path:
+        """解析到当前学生的子目录（workspace/u<id>/...）。
+
+        边界收紧到学生目录本身：学生 A 无法通过 ``../`` 写到学生 B 的目录。
+        无学生上下文时退化为全局工作区路径。
+        """
+        root = (self.workspace / self.student_scope) if self.student_scope else self.workspace
+        resolved = self.resolve_path(root / Path(rel), for_write=for_write)
+        if self.student_scope and not self._is_within(resolved, root):
+            raise SandboxError(
+                "文件操作越出学生工作区",
+                cause=f"路径 {resolved} 超出本学生的目录 {root}",
+                fix="所有文件操作限定在自己学生的目录内",
+            )
+        return resolved
 
     # ---- 文件路径校验 -------------------------------------------------------
 

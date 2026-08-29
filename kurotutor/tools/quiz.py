@@ -230,7 +230,7 @@ async def quiz_generate(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
 
     # 题图下载：题库返回的配图 URL → 下载落盘（题目完整下载：题干/答案/解析/配图都在工作区）
     if ctx.student is not None:
-        img_dir = ctx.sandbox.resolve_path("qbank_images", for_write=True)
+        img_dir = ctx.student_dir("qbank_images")
         for q in questions:
             url = str(q.get("image_url") or "").strip()
             if not url.startswith(("http://", "https://")):
@@ -292,7 +292,7 @@ async def plot_function(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     x_min = float(kwargs.get("x_min") or -10)
     x_max = float(kwargs.get("x_max") or 10)
     title = str(kwargs.get("title") or "").strip()
-    out_dir = ctx.sandbox.resolve_path("plots", for_write=True)
+    out_dir = ctx.student_dir("plots")
     import time as _time
 
     out = str(out_dir / f"plot_{int(_time.time())}.png")

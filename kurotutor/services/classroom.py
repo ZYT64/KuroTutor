@@ -237,7 +237,7 @@ def prepare_course(
     finally:
         with_suppress_close(llm)
 
-    lessons = Path(workspace) / "lessons"
+    lessons = Path(workspace) / f"u{inst.student_id}" / "lessons"
     lessons.mkdir(parents=True, exist_ok=True)
     safe = "".join(c for c in topic if c not in '\\/:*?"<>|')[:40]
     lecture_path = lessons / f"{safe}.md"

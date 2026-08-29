@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime
 from pathlib import Path
 
 import typer
@@ -61,12 +62,32 @@ def serve_command(
 
         handlers = make_handlers(engine, deliver)
 
+        # 数据保留：每日清理一次过期消息/已完成任务（遗忘机制）
+        _retention_state = {"last_date": ""}
+
         async def _scheduler_loop() -> None:
+            from kurotutor.config.loader import load_config
+            from kurotutor.services.retention import DEFAULT_MESSAGE_DAYS, DEFAULT_TASK_DAYS, run_retention
+
+            rcfg = getattr(load_config(), "retention", None)
+            rcfg = rcfg if rcfg is not None and getattr(rcfg, "enabled", True) else None
+            msg_days = getattr(rcfg, "message_days", DEFAULT_MESSAGE_DAYS) if rcfg else DEFAULT_MESSAGE_DAYS
+            task_days = getattr(rcfg, "task_days", DEFAULT_TASK_DAYS) if rcfg else DEFAULT_TASK_DAYS
             while True:
                 try:
                     await asyncio.to_thread(scheduler.process_due, engine, handlers)
                 except Exception as exc:
                     log_event(log, "scheduler error", level="error", error=repr(exc))
+                # 每天第一轮循环顺带跑一次保留清理
+                today = datetime.now().strftime("%Y-%m-%d")
+                if _retention_state["last_date"] != today:
+                    _retention_state["last_date"] = today
+                    try:
+                        await asyncio.to_thread(
+                            run_retention, engine, message_days=msg_days, task_days=task_days
+                        )
+                    except Exception as exc:
+                        log_event(log, "retention error", level="warning", error=repr(exc))
                 await asyncio.sleep(_POLL_SECONDS)
 
         sched_task = asyncio.create_task(_scheduler_loop())

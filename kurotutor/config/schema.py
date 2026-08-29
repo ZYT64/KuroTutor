@@ -63,6 +63,16 @@ class ChannelConfig(BaseModel):
     secret: str = ""
 
 
+class RetentionConfig(BaseModel):
+    """数据保留策略（遗忘机制）：超期消息/已完成任务自动清理。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    message_days: int = 180  # 会话消息保留天数（下限 30）
+    task_days: int = 90  # 已完成调度任务保留天数（下限 14）
+    enabled: bool = True
+
+
 class OpenMAICConfig(BaseModel):
     """OpenMAIC 互动课堂（THU-MAIC/OpenMAIC）接入配置。
 
@@ -131,6 +141,7 @@ class AppConfig(BaseModel):
     channel: ChannelConfig = Field(default_factory=ChannelConfig)
     models: ModelsConfig | None = None
     openmaic: OpenMAICConfig = Field(default_factory=OpenMAICConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     kb: KbConfig = Field(default_factory=KbConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

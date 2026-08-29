@@ -188,7 +188,7 @@ async def _review_crops(ctx: ToolContext, crops: list[str]) -> tuple[list[str], 
 async def _crop_pipeline(ctx: ToolContext, path: str) -> list[str] | None:
     """一条页图 → 题块列表的裁剪管线。无法裁剪（需转写）时返回 None。"""
     # ⓪ 鲁棒性预处理：透视/边界矫正 → 倾斜矫正 → 低对比增强（失败自动用原图）
-    out_dir = ctx.sandbox.resolve_path("qbench/prep", for_write=True)
+    out_dir = ctx.student_dir("qbench/prep")
     cleaned = imgprep.preprocess_image(path, str(out_dir))
     path = cleaned
     # ① 题号锚定切块（含图）：从每题题号裁到下一题，整块保留（图/公式一起）；文字交给视觉读
@@ -313,7 +313,7 @@ async def split_document(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         return "请提供文档路径（path）。"
     resolved = str(ctx.sandbox.resolve_path(path, for_write=False))
     suffix = Path(resolved).suffix.lower()
-    pages_dir = ctx.sandbox.resolve_path("qbench/doc_pages", for_write=True)
+    pages_dir = ctx.student_dir("qbench/doc_pages")
     try:
         if suffix == ".pdf":
             pages = pdf_to_page_images(resolved, str(pages_dir))
@@ -377,7 +377,7 @@ async def merge_crops(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     out = (
         str(ctx.sandbox.resolve_path(str(out_kw), for_write=True))
         if out_kw
-        else _unique_path(ctx.sandbox.resolve_path("qbench", for_write=True), "merged.png")
+        else _unique_path(ctx.student_dir("qbench"), "merged.png")
     )
     try:
         result = stitch_crops(resolved, out)
@@ -391,7 +391,7 @@ async def _crop_via_numbers(ctx: ToolContext, path: str) -> list[str]:
     spec = ctx.config.models.layout if ctx.config.models else None
     if spec is None:
         return []
-    out_dir = ctx.sandbox.resolve_path("qbench", for_write=True)
+    out_dir = ctx.student_dir("qbench")
     try:
         return await cut_by_question_numbers(path, str(out_dir), spec)
     except Exception as exc:
@@ -401,7 +401,7 @@ async def _crop_via_numbers(ctx: ToolContext, path: str) -> list[str]:
 
 async def _crop_via_ink(ctx: ToolContext, path: str) -> list[str]:
     """纯图像墨迹切块：切题目区域（含图）。失败返回空列表。"""
-    out_dir = ctx.sandbox.resolve_path("qbench", for_write=True)
+    out_dir = ctx.student_dir("qbench")
     try:
         crops = await __import__("asyncio").to_thread(cut_blocks_by_ink, path, str(out_dir))
         return crops if crops else []
@@ -415,7 +415,7 @@ async def _crop_via_papercut(ctx: ToolContext, path: str) -> list[str]:
     spec = ctx.config.models.layout if ctx.config.models else None
     if spec is None or not spec.api_key and not (spec.model_dump().get("client_secret")):
         return []
-    out_dir = ctx.sandbox.resolve_path("qbench", for_write=True)
+    out_dir = ctx.student_dir("qbench")
     try:
         return await question_split_cut(spec, path, str(out_dir))
     except Exception as exc:
@@ -442,7 +442,7 @@ async def _crop_via_layout(ctx: ToolContext, path: str) -> list[str]:
     if not lines:
         return []
     groups = group_lines_into_questions(lines)
-    out_dir = ctx.sandbox.resolve_path("qbench", for_write=True)
+    out_dir = ctx.student_dir("qbench")
     paths = crop_questions(path, groups, str(out_dir))
     # 把题面存到 ctx.state 供 agent 引用
     ctx.state["split_texts"] = layout_text(groups)

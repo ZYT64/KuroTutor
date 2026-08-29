@@ -76,7 +76,7 @@ class Agent:
                 )
             provider = build_llm_provider(config.models.llm)
         self._provider = provider
-        self.sandbox = Sandbox(config)
+        self.sandbox = Sandbox(config, student_id=student.id if student is not None else None)
         self._ctx = ToolContext(
             config=config,
             engine=engine,

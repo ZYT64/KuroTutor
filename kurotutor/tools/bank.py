@@ -159,7 +159,7 @@ async def bank_extract(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     if fmt not in ("pdf", "docx"):
         return "format 只支持 pdf 或 docx（组卷导出格式）。"
     try:
-        out_path = _compose_paper(rows, ctx.workspace, fmt)
+        out_path = _compose_paper(rows, ctx.workspace, fmt, ctx.student.id)
     except Exception as exc:
         return f"组卷生成失败：{exc}（请稍后重试或联系管理员查看日志）"
 
@@ -178,7 +178,7 @@ async def bank_extract(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     )
 
 
-def _compose_paper(rows: list[QuestionItem], workspace: str, fmt: str) -> str:
+def _compose_paper(rows: list[QuestionItem], workspace: str, fmt: str, student_id: int) -> str:
     """组卷：统一拼轻量标记（题头/题图/题干/理由），按格式渲染为 PDF 或 Word。"""
     from datetime import datetime as _dt
     from pathlib import Path as _Path
@@ -197,7 +197,7 @@ def _compose_paper(rows: list[QuestionItem], workspace: str, fmt: str) -> str:
         if r.reason:
             lines.append(f"收录理由：{r.reason}")
     content = "\n".join(lines)
-    out_dir = _Path(workspace) / "exports"
+    out_dir = _Path(workspace) / f"u{student_id}" / "exports"
     out_dir.mkdir(parents=True, exist_ok=True)
     out = out_dir / f"题集_{_dt.now():%Y%m%d_%H%M}.{fmt}"
     return write_document(str(out), content)

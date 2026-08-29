@@ -34,3 +34,7 @@ class ToolContext:
     @property
     def workspace(self) -> Any:
         return self.sandbox.workspace
+
+    def student_dir(self, rel: str, *, for_write: bool = True) -> Any:
+        """当前学生的专属子目录（workspace/u<id>/<rel>），多用户文件隔离用。"""
+        return self.sandbox.student_path(rel, for_write=for_write)

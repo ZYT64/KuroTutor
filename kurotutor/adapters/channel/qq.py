@@ -52,6 +52,10 @@ class QQBotpyChannel(ChannelAdapter):
         self._client: Any = None
         # 被动回复去重：同一 msg_id 多次回复需递增 msg_seq（官方消息去重规则）
         self._msg_seq: dict[str, int] = {}
+        # 并发控制：跨学生并行处理、同学生保持顺序（锁）；信号量限制同时在算的消息数
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._sem = asyncio.Semaphore(4)
+        self._tasks: set[asyncio.Task] = set()
 
     def _next_seq(self, msg_id: str) -> int:
         """同一 msg_id 的被动回复递增 msg_seq；主动消息固定 1。"""
@@ -115,21 +119,29 @@ class QQBotpyChannel(ChannelAdapter):
             ) from exc
 
     async def _on_message(self, message: Any) -> None:
-        """处理一条 C2C 私聊消息：先触发原生「对方正在输入」，再交给 Agent 处理并回。"""
-        try:
-            await self._typing_notify(message)
-            user_openid = getattr(message.author, "user_openid", "") or ""
-            text = message.content or ""
-            images = self._download_images(message)
-            if images and not text:
-                text = "这道题我不会，帮我看看。"
-            responses = await self._router.handle(str(user_openid), text, images)
-            for out in responses:
-                await self._send(message, out)
-        except Exception as exc:
-            log_event(log, "qq handle error", level="error", error=repr(exc))
-            with contextlib.suppress(Exception):
-                await self._text_reply(message, "老师这边出了点问题，请稍后再试。")
+        """收到一条 C2C 私聊消息：派发后台任务处理（跨学生并行、同学生串行）。"""
+        openid = str(getattr(message.author, "user_openid", "") or "")
+        lock = self._locks.setdefault(openid, asyncio.Lock())
+        task = asyncio.create_task(self._handle_locked(message, openid, lock))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def _handle_locked(self, message: Any, openid: str, lock: asyncio.Lock) -> None:
+        """处理一条消息：先触发原生「对方正在输入」，再交给 Agent 处理并回。"""
+        async with self._sem, lock:
+            try:
+                await self._typing_notify(message)
+                text = message.content or ""
+                images = self._download_images(message)
+                if images and not text:
+                    text = "这道题我不会，帮我看看。"
+                responses = await self._router.handle(openid, text, images)
+                for out in responses:
+                    await self._send(message, out)
+            except Exception as exc:
+                log_event(log, "qq handle error", level="error", error=repr(exc))
+                with contextlib.suppress(Exception):
+                    await self._text_reply(message, "老师这边出了点问题，请稍后再试。")
 
     def _download_images(self, message: Any) -> list[str]:
         """把 C2C 消息里的图片附件下载到工作区，返回本地路径列表。"""

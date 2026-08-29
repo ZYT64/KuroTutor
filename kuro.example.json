@@ -22,9 +22,9 @@
     },
     "embedding": {
       "provider": "openai",
-      "model": "text-embedding-v3",
-      "api_key": "请填写密钥",
-      "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1"
+      "model": "embedding-3",
+      "base_url": "https://open.bigmodel.cn/api/paas/v4",
+      "api_key": "你的嵌入模型key（可与主模型同key，如智谱 embedding-3）"
     },
     "reranker": {
       "provider": "openai",
