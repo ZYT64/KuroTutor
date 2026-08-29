@@ -50,6 +50,20 @@ class QQBotpyChannel(ChannelAdapter):
         self._router = Router(config, registry, engine)
         self._workspace = config.workspace
         self._client: Any = None
+        # 被动回复去重：同一 msg_id 多次回复需递增 msg_seq（官方消息去重规则）
+        self._msg_seq: dict[str, int] = {}
+
+    def _next_seq(self, msg_id: str) -> int:
+        """同一 msg_id 的被动回复递增 msg_seq；主动消息固定 1。"""
+        if not msg_id:
+            return 1
+        n = self._msg_seq.get(msg_id, 0) + 1
+        self._msg_seq[msg_id] = n
+        # 防止长对话内存膨胀：只保留最近 200 条消息的计数
+        if len(self._msg_seq) > 200:
+            for k in list(self._msg_seq)[: 100]:
+                self._msg_seq.pop(k, None)
+        return n
 
     def _make_client(self):
         """构造 botpy 客户端（懒导入，未装 SDK 时抛可读错误）。"""
@@ -146,7 +160,8 @@ class QQBotpyChannel(ChannelAdapter):
         try:
             await self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid),
-                json={"msg_type": 2, "msg_id": msg_id, "markdown": {"content": content}},
+                json={"msg_type": 2, "msg_id": msg_id, "msg_seq": self._next_seq(msg_id),
+                      "markdown": {"content": content}},
             )
             return
         except Exception:
@@ -154,7 +169,8 @@ class QQBotpyChannel(ChannelAdapter):
         try:
             await self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid),
-                json={"msg_type": 0, "msg_id": msg_id, "content": content},
+                json={"msg_type": 0, "msg_id": msg_id, "msg_seq": self._next_seq(msg_id),
+                      "content": content},
             )
         except Exception as exc:
             log_event(log, "qq reply failed", level="warning", error=str(exc))
@@ -191,8 +207,9 @@ class QQBotpyChannel(ChannelAdapter):
     async def send(self, student_external_id: str, out: OutboundMessage) -> None:
         """主动推送（开课/复习/周报等）。
 
-        C2C 主动消息有官方额度限制（每用户每日少量），失败时记录日志不重试轰炸。
-        讲义文件走富媒体接口（file_type=4），base64 直传，失败降级为纯文本。
+        官方规则：单聊主动消息每日上限 1000 条/用户（20/qpm）；用户在客户端
+        关闭「允许主动发送」后一律失败——失败记日志降级，不重试轰炸。
+        文件按官方富媒体流程：整文件上传拿 file_info → msg_type=7 发送。
         """
         if self._client is None:
             log_event(log, "qq proactive send skipped: client not ready", student=student_external_id)
@@ -201,28 +218,60 @@ class QQBotpyChannel(ChannelAdapter):
 
         try:
             if out.lecture_path and Path(out.lecture_path).exists():
-                try:
-                    file_b64 = base64.b64encode(Path(out.lecture_path).read_bytes()).decode()
-                    await self._client.http.request(
-                        Route("POST", "/v2/users/{openid}/files", openid=student_external_id),
-                        json={"file_type": 4, "file_data": file_b64, "srv_send_msg": True},
-                    )
-                    log_event(log, "qq file sent", student=student_external_id,
-                              file=Path(out.lecture_path).name)
-                except Exception as exc:
-                    log_event(log, "qq file send failed, fallback to text", level="warning",
-                              file=Path(out.lecture_path).name, error=repr(exc))
+                sent = await self._send_file(student_external_id, out.lecture_path)
+                if not sent:
                     out.text = (out.text + f"\n📎 讲义文件「{Path(out.lecture_path).name}」生成好了，"
                                 "但这条通道暂时发不了文件，需要的话说一声我用别的方式给你。").strip()
             if out.text:
                 await self._client.http.request(
                     Route("POST", "/v2/users/{openid}/messages", openid=student_external_id),
-                    json={"content": out.text[:2000], "msg_type": 0, "msg_id": "", "msg_seq": 1},
+                    json={"content": out.text[:2000], "msg_type": 0, "msg_id": "",
+                          "msg_seq": self._next_seq("")},
                 )
                 log_event(log, "qq proactive push sent", student=student_external_id)
         except Exception as exc:
             log_event(log, "qq proactive push failed", level="warning",
                       student=student_external_id, error=repr(exc))
+
+    async def _send_file(self, openid: str, path: str) -> bool:
+        """按官方富媒体流程发文件：POST /files 上传（srv_send_msg=false）拿
+        file_info → msg_type=7 + media.file_info 发送。整文件上传失败时兜底
+        尝试 srv_send_msg=true 直发。file_info 有 ttl，拿到立即发送。"""
+        from botpy.http import Route
+
+        file_b64 = base64.b64encode(Path(path).read_bytes()).decode()
+        try:
+            r = await self._client.http.request(
+                Route("POST", "/v2/users/{openid}/files", openid=openid),
+                json={"file_type": 4, "file_data": file_b64, "srv_send_msg": False},
+            )
+            file_info = ""
+            if isinstance(r, dict):
+                file_info = str(r.get("file_info") or (r.get("media") or {}).get("file_info") or "")
+            if file_info:
+                await self._client.http.request(
+                    Route("POST", "/v2/users/{openid}/messages", openid=openid),
+                    json={"msg_type": 7, "msg_id": "", "msg_seq": self._next_seq(""),
+                          "media": {"file_info": file_info}},
+                )
+                log_event(log, "qq file sent (media)", student=openid, file=Path(path).name)
+                return True
+            log_event(log, "qq file upload returned no file_info", level="warning", file=Path(path).name)
+        except Exception as exc:
+            log_event(log, "qq file upload failed, trying direct send", level="warning",
+                      file=Path(path).name, error=repr(exc))
+        # 兜底：srv_send_msg=true 直发（部分版本支持）
+        try:
+            await self._client.http.request(
+                Route("POST", "/v2/users/{openid}/files", openid=openid),
+                json={"file_type": 4, "file_data": file_b64, "srv_send_msg": True},
+            )
+            log_event(log, "qq file sent (direct)", student=openid, file=Path(path).name)
+            return True
+        except Exception as exc:
+            log_event(log, "qq file direct send failed", level="warning",
+                      file=Path(path).name, error=repr(exc))
+            return False
 
     async def close(self) -> None:
         if self._client is not None:
