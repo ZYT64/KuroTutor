@@ -37,7 +37,7 @@ qq = ["botpy"]
 kuro = "kurotutor.cli.main:app"
 
 [project.urls]
-Homepage = "https://github.com/your-org/kurotutor"
+Homepage = "https://github.com/ZYT64/KuroTutor"
 
 [tool.setuptools.packages.find]
 include = ["kurotutor*"]

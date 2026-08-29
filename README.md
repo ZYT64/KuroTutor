@@ -29,7 +29,7 @@ KuroTutor 是一个部署在自己服务器上的 AI 家教机器人，接入 QQ
 需要 Python 3.11+。
 
 ```bash
-git clone https://github.com/your-org/kurotutor.git
+git clone https://github.com/ZYT64/KuroTutor.git
 cd kurotutor
 python -m venv .venv
 .venv/Scripts/pip install -e .          # Windows；Linux/mac 用 .venv/bin/pip
