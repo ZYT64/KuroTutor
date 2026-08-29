@@ -5,6 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 # ① 预构建 wheel（Dockerfile 直接安装它，不在 BuildKit 内打包）
+rm -f dist/*.whl  # 清掉旧 wheel，避免新旧包并存
 PY=".venv/Scripts/python.exe"        # Windows git-bash
 [ -x "$PY" ] || PY=".venv/bin/python" # Linux/mac
 "$PY" -m pip wheel --no-deps -w dist .

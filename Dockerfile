@@ -34,7 +34,7 @@ ENV PATH="/opt/venv/bin:$PATH" \
 # 安装预构建 wheel（先在宿主机执行：python -m pip wheel --no-deps -w dist .）
 # ⚠️ 不在 BuildKit 内打包：其元数据阶段在本项目上会卡死（docker run 正常，BuildKit 异常，已实测）。
 COPY dist/*.whl /tmp/
-RUN pip install --no-cache-dir /tmp/kurotutor-*.whl && rm -rf /tmp/*.whl
+RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/*.whl
 RUN pip install --no-cache-dir "git+$BOTPY_GIT_URL"
 RUN pip install --no-cache-dir rapidocr_onnxruntime
 

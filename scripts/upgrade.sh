@@ -21,6 +21,7 @@ echo "远端有 $BEHIND 个新提交，开始更新……"
 git pull --ff-only origin main
 
 echo "── 2/5 Docker 内重建 wheel（宿主机无需 Python 环境）"
+rm -f dist/*.whl  # 清掉旧 wheel，避免新老两个包同时进镜像（项目改名后新旧文件名并存）
 docker run --rm -v "$PWD":/io -w /io "$BASE_IMAGE" \
   sh -c "pip install -q --upgrade pip && pip wheel --no-deps -w dist . -i https://mirrors.tuna.tsinghua.edu.cn/pypi/web/simple"
 
