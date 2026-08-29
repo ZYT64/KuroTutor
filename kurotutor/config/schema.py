@@ -132,7 +132,7 @@ class AppConfig(BaseModel):
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    name: str = "kurotutor"
+    name: str = "KuroTutor"
     version: str = "0.1.0"
     # 工作区根目录：Agent 一切文件操作的唯一允许范围（硬约束①）
     workspace: str = "data/workspaces"

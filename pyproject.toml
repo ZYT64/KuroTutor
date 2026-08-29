@@ -3,7 +3,7 @@ requires = ["setuptools>=68", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "kurotutor"
+name = "KuroTutor"
 version = "0.3.0"
 description = "KuroTutor：QQ 私聊里的 24 小时 AI 私人老师（全科、从零自研、开源 MIT）"
 readme = "README.md"
