@@ -31,3 +31,5 @@ jobs:
         env:
           # 测试必须离线：禁止读取任何真实密钥/调用外部服务
           KURO_TEST_OFFLINE: "1"
+          # 部分测试断言按东八区时间推算，统一时区保证任意 runner 上一致
+          TZ: Asia/Shanghai
