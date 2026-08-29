@@ -11,20 +11,18 @@
 
 </div>
 
-KuroTutor 接入 QQ 私聊，做一个随叫随到的家教。学生把不会的题目拍下来发过去，它先讲思路，学生跟上了再对答案；做错的题会记入错题本，隔几天再推回来重做。整卷试卷可以切成一题一图存进题集，之后按知识点组卷导出。
+KuroTutor 是一个部署在自己服务器上的 AI 家教机器人，接入 QQ 私聊。学生把不会的题目拍下来发过去，它读题之后先给思路、逐步引导，而不是直接甩答案；做错的题会记进错题本，按遗忘曲线排期，过几天再推回来重做，直到真正掌握。
 
-## 功能
+除了答疑，它还管这些事：
 
-- **拍照解题**：视觉模型读题，引导式讲解，按学段（小学到大学）调整讲法与深度
-- **作业批改**：整页作业逐题判分，错因归类，错题自动入库
-- **错题复习**：错题按间隔重复排期，到期主动推送复测
-- **出题**：根据学生薄弱点和校内进度出题，优先从网上找真题（含配图），也可以直接画函数图像辅助讲解
-- **自动切题**：多模态视觉识别，整卷切成单题图片；支持透视矫正和跨页题目缝合
-- **排课**：单次课和系列课，到点自动备课、开课提醒，课后自动总结并布置作业
-- **学习周报**：每周汇总练习、错题、掌握度变化，可导出 Word
-- **入学诊断**：新生摸底测试，判分后确定学习起点并建立画像
+- 整页作业拍一张，逐题判分，错因归类，错题自动入库
+- 根据学生的薄弱点和校内进度出题，优先从网上搜真题；讲函数时可以直接画图
+- 整卷试卷自动切成一题一图（多模态视觉识别，支持歪图矫正、跨页缝合），按知识点组卷导出 PDF 或 Word
+- 约课：单次课或系列课，到点自动备课、提醒上课，课后总结并布置作业
+- 每周出一份学习周报，练习量、错题、掌握度变化都在里面，可导出 Word
+- 新学生先做一次摸底测试，确定学习起点，之后的讲解和出题都从这里出发
 
-所有交互都在 QQ 对话里完成，没有菜单和指令，学生正常说话即可。
+答疑之外的管理操作走命令行，没有 WebUI。
 
 ## 安装
 
@@ -37,7 +35,7 @@ python -m venv .venv
 .venv/Scripts/pip install -e .          # Windows；Linux/mac 用 .venv/bin/pip
 ```
 
-初始化配置后即可在终端联调（没有模型密钥也可以选离线演示模式）：
+初始化配置后可以在终端里先联调（没有模型密钥时选离线演示模式也能跑通）：
 
 ```bash
 kuro init
@@ -46,17 +44,21 @@ kuro serve --channel console
 
 ## 接入 QQ
 
-1. 在 [QQ 开放平台](https://q.qq.com)创建机器人，拿到 AppID 和 Secret
-2. `kuro init` 时填入，或直接编辑 `kuro.json` 的 `channel` 字段
-3. 启动 `kuro serve --channel qq`，在 QQ 里私聊机器人即可
+在 [QQ 开放平台](https://q.qq.com)创建机器人，把 AppID 和 Secret 填进 `kuro.json` 的 `channel` 字段（`kuro init` 会引导你填），然后启动：
+
+```bash
+kuro serve --channel qq
+```
+
+之后在 QQ 里私聊机器人就能用。
 
 ## 配置
 
-配置在根目录的 `kuro.json`，`kuro init` 会生成模板（见 [`kuro.example.json`](kuro.example.json)）。
+配置都在根目录的 `kuro.json`，模板见 [`kuro.example.json`](kuro.example.json)。
 
-文本模型是唯一必填项，填任意 OpenAI 兼容服务（GLM、DeepSeek、通义等）的 `base_url`、`model` 和 `api_key` 即可。视觉模型不填时自动使用主模型（主模型需支持图片）。搜索和题库 key 可选，用于出题时从网上找真题。
+文本模型是唯一必填项，任何 OpenAI 兼容服务（GLM、DeepSeek、通义等）填上 `base_url`、`model`、`api_key` 就能用。视觉模型不填时自动复用主模型，前提是主模型支持图片输入。搜索和题库的 key 可选，用于出题时找真题。
 
-密钥保存在本地 `kuro.json`，注意不要提交到代码仓库或分享给他人。
+密钥只保存在本地 `kuro.json`，不要提交到代码仓库或发给别人。
 
 ## Docker
 
@@ -65,23 +67,18 @@ cp kuro.example.json kuro.json    # 填好密钥
 docker compose up -d
 ```
 
-镜像支持 amd64 和 arm64，不依赖 GPU。数据和配置通过挂载卷持久化，容器重启后自动恢复。管理操作走 CLI：
-
-```bash
-docker compose run --rm cli kuro doctor
-docker compose run --rm cli kuro student list
-```
-
-## 常用命令
+镜像支持 amd64 和 arm64，不需要 GPU，数据和配置通过挂载卷持久化，重启自动恢复。日常管理：
 
 ```bash
 kuro doctor                   # 检查配置、数据库、模型、渠道
 kuro student list             # 学生列表
-kuro student show <id>        # 学情详情（画像、错题、进度）
+kuro student show <id>        # 学情详情：画像、错题、进度
 kuro export wrongbook <学生>  # 导出错题本
 kuro export report <学生>     # 导出学习报告
 ```
 
+容器部署时把 `kuro` 换成 `docker compose run --rm cli kuro` 即可。
+
 ## 许可
 
-[MIT](LICENSE)。学生数据只存储在部署者自己的服务器上，提供导出和删除接口。
+[MIT](LICENSE)。学生数据只存在部署者自己的服务器上，提供导出和删除接口。
