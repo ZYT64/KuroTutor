@@ -78,8 +78,16 @@ def build_graph(
                 tool_calls = m.get("tool_calls")
                 tool_call_id = m.get("tool_call_id")
                 if tool_calls:
+                    # dict → ToolCall 对象（Provider 序列化需要访问属性）
+                    from kurotutor.services.llm import ToolCall as _TC
+
+                    tcs = [
+                        _TC(id=tc["id"], name=tc["name"], arguments=tc["arguments"])
+                        for tc in tool_calls
+                        if isinstance(tc, dict)
+                    ]
                     full_messages.append(
-                        ChatMessage(role=role, content=content, tool_calls=tool_calls)
+                        ChatMessage(role=role, content=content, tool_calls=tcs)
                     )
                 elif tool_call_id:
                     full_messages.append(
@@ -104,15 +112,15 @@ def build_graph(
                 "error": repr(exc),
             }
 
-        # 无工具调用 → 最终回复
+        # 无工具调用 → 最终回复（保留全部历史消息）
         if not result.tool_calls:
             return {
-                "messages": [{"role": "assistant", "content": result.content or ""}],
+                "messages": messages + [{"role": "assistant", "content": result.content or ""}],
                 "final_text": (result.content or "").strip(),
                 "iterations": iterations + 1,
             }
 
-        # 有工具调用 → 返回 assistant 消息（含 tool_calls），由条件边路由到工具节点
+        # 有工具调用 → 返回全部历史 + assistant 消息（含 tool_calls），由条件边路由到工具节点
         msg = {
             "role": "assistant",
             "content": result.content or "",
@@ -121,7 +129,7 @@ def build_graph(
                 for tc in result.tool_calls
             ],
         }
-        return {"messages": [msg], "iterations": iterations + 1}
+        return {"messages": messages + [msg], "iterations": iterations + 1}
 
     async def tool_node(state: GraphState) -> dict[str, Any]:
         """执行所有工具调用，结果回填为 tool 消息。"""
