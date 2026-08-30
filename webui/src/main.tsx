@@ -10,20 +10,23 @@ import {
   ChartLineUp,
   Moon,
   Sun,
+  BookOpen,
 } from "@phosphor-icons/react";
 import { api } from "./api";
 import { Dashboard } from "./pages/Dashboard";
 import { Students } from "./pages/Students";
 import { Mistakes, Schedule } from "./pages/Mistakes";
+import { KnowledgeBase } from "./pages/KnowledgeBase";
 import { Settings } from "./pages/Settings";
 import "./index.css";
 
-type Page = "dashboard" | "students" | "mistakes" | "schedule" | "settings";
+type Page = "dashboard" | "students" | "mistakes" | "kb" | "schedule" | "settings";
 
 const NAV: { key: Page; label: string; icon: typeof SquaresFour }[] = [
   { key: "dashboard", label: "仪表盘", icon: ChartLineUp },
   { key: "students", label: "学生", icon: GraduationCap },
   { key: "mistakes", label: "错题本", icon: Notebook },
+  { key: "kb", label: "知识库", icon: BookOpen },
   { key: "schedule", label: "排课", icon: CalendarBlank },
   { key: "settings", label: "设置", icon: GearSix },
 ];
@@ -157,6 +160,7 @@ export function App() {
         {page === "dashboard" && <Dashboard />}
         {page === "students" && <Students />}
         {page === "mistakes" && <Mistakes />}
+        {page === "kb" && <KnowledgeBase />}
         {page === "schedule" && <Schedule />}
         {page === "settings" && <Settings />}
       </main>

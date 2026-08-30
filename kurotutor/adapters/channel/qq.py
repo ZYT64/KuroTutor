@@ -121,6 +121,17 @@ class QQBotpyChannel(ChannelAdapter):
     async def _on_message(self, message: Any) -> None:
         """收到一条 C2C 私聊消息：派发后台任务处理（跨学生并行、同学生串行）。"""
         openid = str(getattr(message.author, "user_openid", "") or "")
+        # 调试日志：记录消息类型与附件信息（排查文件收不到的问题）
+        attaches = getattr(message, "attachments", None) or []
+        att_info = [
+            {"type": getattr(a, "content_type", ""), "url": str(getattr(a, "url", ""))[:80]}
+            for a in attaches
+        ]
+        log_event(
+            log, "qq message received",
+            content=(message.content or "")[:60], attachments=att_info,
+            event_type=type(message).__name__,
+        )
         lock = self._locks.setdefault(openid, asyncio.Lock())
         task = asyncio.create_task(self._handle_locked(message, openid, lock))
         self._tasks.add(task)
@@ -132,7 +143,7 @@ class QQBotpyChannel(ChannelAdapter):
             try:
                 await self._typing_notify(message)
                 text = message.content or ""
-                images = self._download_images(message)
+                images = self._download_attachments(message)
                 if images and not text:
                     text = "这道题我不会，帮我看看。"
                 responses = await self._router.handle(openid, text, images)
@@ -143,19 +154,21 @@ class QQBotpyChannel(ChannelAdapter):
                 with contextlib.suppress(Exception):
                     await self._text_reply(message, "老师这边出了点问题，请稍后再试。")
 
-    def _download_images(self, message: Any) -> list[str]:
-        """把 C2C 消息里的图片附件下载到工作区，返回本地路径列表。"""
+    def _download_attachments(self, message: Any) -> list[str]:
+        """下载 C2C 消息里的图片/文件附件到工作区，返回本地路径列表。"""
         from kurotutor.tools.files import save_remote_image
 
         paths: list[str] = []
         for attach in getattr(message, "attachments", []) or []:
             url = getattr(attach, "url", "") or ""
             ctype = getattr(attach, "content_type", "") or ""
-            if url and ("image" in ctype or url):
-                try:
-                    paths.append(save_remote_image(url, self._workspace))
-                except Exception as exc:
-                    log_event(log, "image download failed", level="warning", url=url, error=str(exc))
+            log_event(log, "qq attachment", ctype=ctype, url=url[:80])
+            if not url:
+                continue
+            try:
+                paths.append(save_remote_image(url, self._workspace))
+            except Exception as exc:
+                log_event(log, "attachment download failed", level="warning", url=url[:80], error=str(exc))
         return paths
 
     async def _text_reply(self, message: Any, content: str) -> None:

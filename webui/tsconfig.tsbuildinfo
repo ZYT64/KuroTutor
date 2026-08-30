@@ -1,1 +1,1 @@
-{"root":["./src/api.ts","./src/main.tsx","./src/pages/dashboard.tsx","./src/pages/mistakes.tsx","./src/pages/settings.tsx","./src/pages/students.tsx"],"version":"5.9.3"}
+{"root":["./src/api.ts","./src/main.tsx","./src/pages/dashboard.tsx","./src/pages/knowledgebase.tsx","./src/pages/mistakes.tsx","./src/pages/settings.tsx","./src/pages/students.tsx"],"version":"5.9.3"}

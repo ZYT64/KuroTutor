@@ -21,7 +21,9 @@ from kurotutor.core import get_logger
 from kurotutor.services.stats import effect_summary, take_daily_snapshot
 from kurotutor.storage import (
     CheckIn,
+    CorpusEntry,
     CourseInstance,
+    KnowledgeCard,
     KnowledgePoint,
     MasterySnapshot,
     ScheduleTask,
@@ -237,6 +239,47 @@ def create_app() -> FastAPI:
             }
             for w in rows
         ]
+
+    @app.get("/api/kb")
+    def kb_list(request: Request, student_id: int | None = None):
+        """知识库列表：方法卡片 + 语料，可按学生筛选。"""
+        _require(request)
+        with session_scope(_get_engine()) as db:
+            cards_stmt = select(KnowledgeCard).order_by(KnowledgeCard.id.desc()).limit(200)
+            corpus_stmt = select(CorpusEntry).order_by(CorpusEntry.id.desc()).limit(100)
+            if student_id:
+                from sqlmodel import or_
+
+                cards_stmt = cards_stmt.where(
+                    or_(KnowledgeCard.student_id == student_id, KnowledgeCard.student_id.is_(None))
+                )
+                corpus_stmt = corpus_stmt.where(CorpusEntry.student_id == student_id)
+            cards = db.exec(cards_stmt).all()
+            corpus = db.exec(corpus_stmt).all()
+            names = {s.id: (s.nickname or s.external_id[:8]) for s in db.exec(select(Student)).all()}
+        return {
+            "cards": [
+                {
+                    "id": c.id,
+                    "student": names.get(c.student_id, "公共") if c.student_id else "公共",
+                    "subject": c.subject,
+                    "problem_type": c.problem_type,
+                    "method": (c.method or "")[:100],
+                    "steps": (c.steps or "")[:150],
+                }
+                for c in cards
+            ],
+            "corpus": [
+                {
+                    "id": e.id,
+                    "student": names.get(e.student_id, "未知") if e.student_id else "公共",
+                    "title": e.title,
+                    "subject": e.subject,
+                    "content": (e.content or "")[:120],
+                }
+                for e in corpus
+            ],
+        }
 
     @app.get("/api/schedule")
     def schedule(request: Request):
