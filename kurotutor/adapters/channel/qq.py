@@ -147,6 +147,8 @@ class QQBotpyChannel(ChannelAdapter):
                 await self._typing_notify(message)
                 text = message.content or ""
                 files = self._download_attachments(message)
+                # 自动解压 zip
+                files = self._extract_zips(files)
                 # 区分图片和文档：图片走 solve_photo（视觉），文档走 doc_read/ocr_read
                 img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
                 images = [f for f in files if Path(f).suffix.lower() in img_exts]
@@ -154,7 +156,7 @@ class QQBotpyChannel(ChannelAdapter):
                 # 把文件类型信息告诉 Agent，让它选对工具
                 if docs and not text:
                     names = ", ".join(Path(d).name for d in docs)
-                    text = f"我发了一个文件（{names}），请帮我看看内容。"
+                    text = f"我发了一些文件（{names}），请帮我看看内容。"
                 elif docs and text:
                     text += f"\n[附带了文件：{', '.join(Path(d).name for d in docs)}]"
                 if images and not text:
@@ -166,6 +168,38 @@ class QQBotpyChannel(ChannelAdapter):
                 log_event(log, "qq handle error", level="error", error=repr(exc))
                 with contextlib.suppress(Exception):
                     await self._text_reply(message, "老师这边出了点问题，请稍后再试。")
+
+    def _extract_zips(self, files: list[str]) -> list[str]:
+        """自动解压 zip 文件，返回解压后所有文件的路径列表（原 zip 替换为其内容）。"""
+        import zipfile as _zf
+
+        result: list[str] = []
+        for f in files:
+            if not f.lower().endswith(".zip"):
+                result.append(f)
+                continue
+            try:
+                dest = Path(f).parent / (Path(f).stem + "_extracted")
+                dest.mkdir(parents=True, exist_ok=True)
+                extracted = []
+                with _zf.ZipFile(f) as zf:
+                    for name in zf.namelist():
+                        if ".." in name:
+                            continue  # 拒绝路径穿越
+                        target = dest / name
+                        if name.endswith("/"):
+                            target.mkdir(parents=True, exist_ok=True)
+                            continue
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        with zf.open(name) as src, open(target, "wb") as dst:
+                            dst.write(src.read())
+                        extracted.append(str(target))
+                result.extend(extracted)
+                log_event(log, "zip extracted", file=Path(f).name, files=len(extracted))
+            except Exception as exc:
+                log_event(log, "zip extract failed", level="warning", file=Path(f).name, error=str(exc))
+                result.append(f)  # 解压失败保留原文件
+        return result
 
     def _download_attachments(self, message: Any) -> list[str]:
         """下载 C2C 消息里的图片/文件附件到工作区，返回本地路径列表。
