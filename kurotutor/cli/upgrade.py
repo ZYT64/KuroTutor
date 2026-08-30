@@ -48,6 +48,11 @@ def _rebuild_wheel(root: Path) -> None:
     dist.mkdir(exist_ok=True)
     for old in dist.glob("*.whl"):
         old.unlink()
+    # 清掉旧 egg-info：Windows 本地安装残留会让容器内 setuptools 报时间戳错误
+    import shutil as _shutil
+
+    for egg in root.glob("*.egg-info"):
+        _shutil.rmtree(egg, ignore_errors=True)
     if _in_container():
         cmd = [sys.executable, "-m", "pip", "wheel", "--no-deps", "-w", "dist", ".", "-i", _PIP_MIRROR]
         code, out = _run(cmd, cwd=root)

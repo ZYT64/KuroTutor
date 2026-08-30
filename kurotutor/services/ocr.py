@@ -27,7 +27,7 @@ class OcrError(Exception):
     """OCR 失败（含可操作的修复建议）。"""
 
 
-# ---- 百度（通用文字识别高精度版；每月 1000 次免费） ----------------------------
+# ---- 百度（通用文字识别标准版；每月自动 1000 次免费） ----------------------------
 
 
 def _baidu_token(cfg: Any) -> str:
@@ -49,7 +49,7 @@ def _baidu_token(cfg: Any) -> str:
 def ocr_image_baidu(image: bytes, cfg: Any) -> str:
     token = _baidu_token(cfg)
     r = httpx.post(
-        "https://aip.baidubce.com/rest/2.0/ocr/v1/accurate_basic",
+        "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic",
         params={"access_token": token},
         headers={"Content-Type": "application/x-www-form-urlencoded"},
         data={"image": base64.b64encode(image).decode()},
@@ -111,26 +111,50 @@ def ocr_image_tencent(image: bytes, cfg: Any) -> str:
     return "\n".join(item["DetectedText"] for item in resp["TextDetections"])
 
 
-# ---- 本地（RapidOCR，免费无限） ------------------------------------------------
+# ---- 本地（RapidOCR，免费无限；按设备自适应引擎包） ------------------------------
 
 _LOCAL_OCR = None
 
 
+def _load_local_ocr():
+    """按设备自适应加载本地引擎：优先新统一包 rapidocr（自动选后端），
+    回退经典 rapidocr_onnxruntime / rapidocr_openvino（树莓派等 ARM 装 onnxruntime 版即可）。"""
+    global _LOCAL_OCR
+    if _LOCAL_OCR is not None:
+        return _LOCAL_OCR
+    try:  # 新统一包（v3+，自动选 onnxruntime/openvino 后端）
+        from rapidocr import RapidOCR as _RapidOCR
+
+        _LOCAL_OCR = ("v3", _RapidOCR())
+        return _LOCAL_OCR
+    except ImportError:
+        pass
+    for mod in ("rapidocr_onnxruntime", "rapidocr_openvino"):
+        try:
+            m = __import__(mod, fromlist=["RapidOCR"])
+            _LOCAL_OCR = ("classic", m.RapidOCR())
+            return _LOCAL_OCR
+        except ImportError:
+            continue
+    raise OcrError(
+        "本地 OCR 引擎未安装。按设备任选其一安装：pip install rapidocr（推荐）"
+        " 或 pip install rapidocr_onnxruntime；也可改用百度/腾讯识别"
+    )
+
+
 def ocr_image_local(image: bytes) -> str:
+    import cv2
     import numpy as np
 
-    global _LOCAL_OCR
-    if _LOCAL_OCR is None:
-        try:
-            from rapidocr_onnxruntime import RapidOCR
-        except ImportError as exc:
-            raise OcrError(
-                "本地 OCR 引擎未安装（rapidocr-onnxruntime）。"
-                "可 pip install rapidocr_onnxruntime，或改用百度/腾讯识别"
-            ) from exc
-        _LOCAL_OCR = RapidOCR()
-    arr = np.frombuffer(image, dtype=np.uint8)
-    result, _ = _LOCAL_OCR(arr)
+    version, engine = _load_local_ocr()
+    # 引擎要的是解码后的图像数组，不是文件原始字节
+    arr = cv2.imdecode(np.frombuffer(image, dtype=np.uint8), cv2.IMREAD_COLOR)
+    if arr is None:
+        raise OcrError("图片无法解码（文件损坏或不是图片）")
+    if version == "v3":
+        out = engine(arr)
+        return "\n".join(getattr(out, "txts", None) or [])
+    result, _ = engine(arr)
     if not result:
         return ""
     return "\n".join(line[1] for line in result)
@@ -205,7 +229,7 @@ def mineru_parse_file(path: Path, cfg: Any, *, timeout_s: int = 300) -> str:
             },
         )
         apply_data = apply_r.json()
-        if apply_r.status_code != 200 or apply_data.get("code") != 20000:
+        if apply_r.status_code != 200 or apply_data.get("code") != 0:  # MinerU 成功码是 0
             raise OcrError(f"MinerU 任务申请失败：{str(apply_data)[:160]}")
         batch_id = apply_data["data"]["batch_id"]
         put_url = apply_data["data"]["file_urls"][0]
