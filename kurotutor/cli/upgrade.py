@@ -81,6 +81,8 @@ def upgrade_command(
         raise typer.Exit(1)
 
     ui.heading("KuroTutor 更新检查")
+    # 容器内 root 操作宿主挂载的仓库时 git 会拒绝（dubious ownership），加白名单
+    _run(["git", "config", "--global", "--add", "safe.directory", str(root)])
     code, out = _run(["git", "fetch", "origin"], cwd=root)
     if code != 0:
         ui.err(f"拉取远端信息失败：{out[:200]}")
