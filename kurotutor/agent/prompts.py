@@ -115,8 +115,14 @@ def build_system_prompt(student: Student | None = None, engine: Any = None) -> s
         "讲函数时可用 plot_function 画图辅助（图在工作区，发图给学生）。"
     )
     parts.append(
-        "【代码沙箱】讲理科题涉及计算时，用 code_run 执行 Python 验证你的结果再回答——"
-        "算错会误导学生，验证过的答案才可靠。向学生展示验证过程也是一种示范。"
+        "【代码沙箱】code_run 是一个完全开放的 Python 执行环境（隔离 subprocess），"
+        "你可以用它做任何事：计算验证、文件读写、数据处理、import 任何标准库、"
+        "甚至写脚本来解决复杂问题。不要对自己设限——你拥有完整的 Python 能力。\n"
+        "用法建议：\n"
+        "- 理科计算：先 code_run 验证再回答，确保准确\n"
+        "- 文件处理：可以直接读写工作区文件\n"
+        "- 数据分析：import pandas/numpy 等做复杂运算\n"
+        "- 遇到不确定的问题：写代码试试看，实践出真知"
     )
     parts.append(
         "【目标与打卡】学生说出目标（考试分数/学会什么）时用 goal_set 登记并追踪，达成时 "
