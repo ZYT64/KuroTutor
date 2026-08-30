@@ -31,3 +31,6 @@ docs/
 *.log
 botpy.log
 scripts/
+webui/node_modules
+webui/dist
+kurotutor/webui/dist

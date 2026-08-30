@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* 单一主题锁：暗色。单一强调色锁：emerald。圆角体系锁：交互体 rounded-lg、容器 rounded-xl */
+:root {
+  color-scheme: dark;
+  --accent: oklch(0.72 0.15 162);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-zinc-950 text-zinc-100 antialiased;
+  font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "PingFang SC",
+    "Microsoft YaHei", sans-serif;
+}
+
+::selection {
+  background: color-mix(in oklch, var(--accent) 35%, transparent);
+}

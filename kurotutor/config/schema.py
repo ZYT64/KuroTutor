@@ -63,6 +63,17 @@ class ChannelConfig(BaseModel):
     secret: str = ""
 
 
+class WebUIConfig(BaseModel):
+    """WebUI 管理面板：只读学情查看（口令认证，默认仅局域网）。"""
+
+    model_config = ConfigDict(extra="allow")
+
+    enabled: bool = True
+    token: str = ""  # 登录口令；为空表示禁用面板
+    host: str = "0.0.0.0"
+    port: int = 8001
+
+
 class RetentionConfig(BaseModel):
     """数据保留策略（遗忘机制）：超期消息/已完成任务自动清理。"""
 
@@ -142,6 +153,7 @@ class AppConfig(BaseModel):
     models: ModelsConfig | None = None
     openmaic: OpenMAICConfig = Field(default_factory=OpenMAICConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
+    webui: WebUIConfig = Field(default_factory=WebUIConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     kb: KbConfig = Field(default_factory=KbConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

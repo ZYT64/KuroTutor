@@ -9,6 +9,13 @@
 # 国内直连 Docker Hub 常失败，默认走 DaoCloud 镜像源；海外构建传
 #   --build-arg BASE_IMAGE=python:3.11-slim
 ARG BASE_IMAGE=docker.m.daocloud.io/library/python:3.11-slim
+FROM docker.m.daocloud.io/library/node:22-slim AS webui
+WORKDIR /webui
+COPY webui/package.json webui/package-lock.json* ./
+RUN npm config set registry https://registry.npmmirror.com && npm install
+COPY webui/ ./
+RUN npm run build
+
 FROM ${BASE_IMAGE} AS builder
 
 # 国内默认 TUNA 镜像；botpy 不在 PyPI，走 ghfast.top 代理克隆（海外可改回 GitHub 原址）。
@@ -49,6 +56,7 @@ RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g; s@https://@http://@
     && useradd --create-home --shell /usr/sbin/nologin kuro
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=webui /webui/dist /app/kurotutor/webui/dist
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
     TZ=Asia/Shanghai

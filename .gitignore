@@ -54,3 +54,8 @@ STUDENT-VIEW-ACCEPTANCE.md
 产品规格书.md
 .claude/
 docs/
+
+# WebUI 前端构建产物与依赖（Docker 内构建，不入库）
+webui/node_modules/
+webui/dist/
+kurotutor/webui/dist/
