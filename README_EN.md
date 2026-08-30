@@ -4,10 +4,10 @@
 
 **An AI tutor in your QQ private chat**
 
-[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/ZYT64/KuroTutor?style=flat-square&label=latest)](https://github.com/ZYT64/KuroTutor/releases/latest)
 [![CI](https://img.shields.io/github/actions/workflow/status/ZYT64/KuroTutor/ci.yml?style=flat-square&label=CI)](https://github.com/ZYT64/KuroTutor/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow?style=flat-square)](LICENSE)
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?style=flat-square&logo=docker&logoColor=white)](#docker)
 [![QQ](https://img.shields.io/badge/QQ-official%20SDK-12B7F5?style=flat-square&logo=tencentqq&logoColor=white)](#qq-setup)
 
@@ -15,22 +15,24 @@ English | [简体中文](README.md)
 
 </div>
 
-KuroTutor is a self-hosted AI tutor that lives in QQ private chat. Students send a photo of a problem they're stuck on; the tutor walks them through the idea step by step instead of dumping a full solution. Wrong answers go into a mistake notebook and come back a few days later for spaced review — until they're mastered.
-
-Beyond Q&A, it grades whole homework pages, generates practice questions from real exam sources, turns exam papers into per-question images, schedules one-on-one lessons, and sends weekly progress reports. Day-to-day administration happens over the command line and a built-in web panel.
+KuroTutor is a self-hosted AI tutor that lives in QQ private chat. Students send a photo of a problem they're stuck on; the tutor walks them through the idea step by step instead of dumping a full solution. Wrong answers go into a mistake notebook and come back a few days later for spaced review, until they're truly mastered.
 
 ## Features
 
-- Grade whole homework pages from a single photo: per-question scoring with mistake categorization; mistakes are filed automatically
-- Spaced-repetition review: mistakes are scheduled on a forgetting curve and pushed back when due
-- Practice questions matched to the student's weak points and school progress, preferring real exam questions found online; function plotting for graph-heavy topics
-- Exam paper processing: split a full paper into single-question images (multimodal vision, with perspective correction and cross-page stitching), then compose PDF/Word worksheets by knowledge point
-- Lesson scheduling: single or series lessons with automatic preparation, start reminders, and post-class summaries with homework
-- Weekly reports: practice volume, mistakes, and mastery trends, exportable as Word
-- Placement test for new students to establish a starting point
-- Optional interactive classrooms powered by [OpenMAIC](https://github.com/THU-MAIC/OpenMAIC): AI teachers and classmates lecture, discuss, and draw on a whiteboard in real time
-- Web admin panel: student progress, mistake notebook, scheduling, live config editing (masked keys), light/dark themes
-- Optional encrypted cloud backup to your own Gitee private repo: full-data snapshots as daily versions with one-click rollback
+- **Photo solving / homework grading**: grade a whole homework page from one photo with per-question scoring and mistake categorization; step-by-step guidance tuned to the student's grade level (elementary through college)
+- **Spaced-repetition review**: mistakes are scheduled on a forgetting curve and pushed back when due, with pass-rate and mastery tracking
+- **Personalized practice**: questions matched to weak points and school progress, preferring real exam questions found online (with images); repeats within 7 days are skipped; function plotting for graph-heavy topics
+- **Exam paper processing**: split a full paper into single-question images (multimodal vision, perspective correction, cross-page stitching), then compose PDF/Word worksheets by knowledge point
+- **Lesson scheduling**: single or series lessons with automatic preparation, start reminders, and post-class summaries with homework
+- **Interactive classrooms (optional)**: powered by [OpenMAIC](https://github.com/THU-MAIC/OpenMAIC) — each lesson gets a multi-agent classroom link where AI teachers and classmates lecture, discuss, and draw on a whiteboard in real time
+- **Weekly reports**: practice volume, mistakes, review outcomes, and mastery trends, exportable as Word
+- **Placement test**: new students take a diagnostic to establish a starting point and profile
+- **Goals & check-ins**: goal tracking and daily check-in streaks
+- **Code sandbox**: isolated Python execution to verify calculations while tutoring
+- **Web admin panel**: student progress and mastery trends, mistake notebook, scheduling, live config editing (masked keys), data backup and version rollback, light/dark themes
+- **Encrypted cloud backup (optional)**: full-data snapshots AES-encrypted and pushed daily as separate versions to your own Gitee private repo, with one-click rollback
+
+All tutoring happens in QQ chat; administration happens in the web panel and command line.
 
 ## Install
 
@@ -62,9 +64,9 @@ Message the bot in a private chat and it just works.
 
 ## Configuration
 
-All configuration lives in `kuro.json` at the project root; see [`kuro.example.json`](kuro.example.json) for a template.
+All configuration lives in `kuro.json` at the project root; see [`kuro.example.json`](kuro.example.json) for a template. You can also edit everything from the web panel after deployment.
 
-The text model is the only required setting — any OpenAI-compatible service (GLM, DeepSeek, Qwen, etc.) with `base_url`, `model`, and `api_key`. The vision model falls back to the main model when unset, as long as it accepts images. Search and question-bank keys are optional and used for sourcing real exam questions.
+The text model is the only required setting — any OpenAI-compatible service (GLM, DeepSeek, Qwen, etc.) with `base_url`, `model`, and `api_key`. The vision model falls back to the main model when unset, as long as it accepts images. Embedding, search, and question-bank keys are optional: embeddings enable semantic search in the knowledge base; search and question banks source real exam questions.
 
 API keys stay in your local `kuro.json` — don't commit it or share it.
 
@@ -78,28 +80,38 @@ Images are built for amd64 and arm64, no GPU needed. Data and configuration pers
 
 ### Web panel
 
-After deployment open `http://<server-ip>:8002` and sign in with the token set in `webui.token`. To change the host port, set `KURO_PANEL_PORT` in a `.env` file next to `compose.yaml`.
+After deployment open `http://<server-ip>:8002` (default port) and sign in with the token set in `webui.token`.
+
+The panel covers student progress and mastery trend charts, the mistake notebook (filterable per student), lesson scheduling, **live editing of every setting** (model keys, QQ credentials, cloud backup — keys masked on display), and data backup. Light and dark themes are one click away.
+
+To change the host port, set `KURO_PANEL_PORT` in a `.env` file next to `compose.yaml` and restart; the container-side port is `webui.port` in `kuro.json`.
 
 ### Encrypted cloud backup (optional)
 
-Fill in your Gitee private repo, personal token, and an encryption password under Settings → Cloud backup in the panel. KuroTutor then pushes an encrypted full-data snapshot daily as its own version — today never overwrites yesterday — with one-click rollback from the panel. Only ciphertext ever leaves your server.
+Fill in your Gitee private repo, personal token, and an encryption password under Settings → Cloud backup. KuroTutor then pushes an AES-encrypted full-data snapshot (database, workspaces, knowledge base, config) daily as its own version — today never overwrites yesterday — with one-click rollback from the panel. Only ciphertext ever leaves your server, and the encryption password is the only way to decrypt it.
 
-Day-to-day administration:
+### Upgrade
+
+```bash
+docker compose run --rm cli kuro upgrade
+```
+
+One command pulls the latest code, rebuilds the package and image, and rolls the deployment forward. Data volumes persist across upgrades.
+
+## Command line
+
+For container deployments, replace `kuro` with `docker compose run --rm cli kuro`:
 
 ```bash
 kuro doctor                   # check config, database, models, channels
 kuro student list             # list students
 kuro student show <id>        # profile, mistakes, progress
 kuro export wrongbook <name>  # export the mistake notebook
-kuro backup                   # back up all data into a single archive
+kuro export report <name>     # export a learning report
+kuro backup [--cloud]         # local / cloud backup
+kuro restore                  # roll back to a cloud backup version
 ```
-
-For container deployments, replace `kuro` with `docker compose run --rm cli kuro`.
-
-## Feedback
-
-Questions, suggestions, partnerships: [kurotutor@tinkmail.me](mailto:kurotutor@tinkmail.me), or open an [issue](https://github.com/ZYT64/KuroTutor/issues).
 
 ## License
 
-[MIT](LICENSE). Student data stays on the deployer's own server, with export and deletion built in.
+[MIT](LICENSE). Student data stays on the deployer's own server (or in the deployer's own encrypted backup repo), with export and deletion built in.
