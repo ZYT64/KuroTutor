@@ -9,6 +9,7 @@ from __future__ import annotations
 import zipfile
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import FileResponse
@@ -36,20 +37,31 @@ log = get_logger("webui")
 _COOKIE = "kuro_webui"
 
 
-def _load_engine():
-    from kurotutor.storage import build_engine, init_db
-
-    cfg = load_config()
-    engine = build_engine("sqlite:///" + cfg.data_dir.replace("\\", "/") + "/kurotutor.db")
-    init_db(engine)
-    return cfg, engine
+# 懒加载：模块导入不触发配置读取与数据库连接（测试可 monkeypatch 覆盖）
+_CFG: Any = None
+_ENGINE: Any = None
 
 
-_CFG, _ENGINE = _load_engine()
+def _get_cfg():
+    global _CFG
+    if _CFG is None:
+        _CFG = load_config()
+    return _CFG
+
+
+def _get_engine():
+    global _ENGINE
+    if _ENGINE is None:
+        from kurotutor.storage import build_engine, init_db
+
+        cfg = _get_cfg()
+        _ENGINE = build_engine("sqlite:///" + cfg.data_dir.replace("\\", "/") + "/kurotutor.db")
+        init_db(_ENGINE)
+    return _ENGINE
 
 
 def _authed(request) -> bool:
-    token = (_CFG.webui.token or "").strip()
+    token = (_get_cfg().webui.token or "").strip()
     if not token:
         return False  # 未配置口令 = 面板禁用
     return request.cookies.get(_COOKIE) == token
@@ -78,7 +90,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/login")
     def login(body: LoginBody, response: Response):
-        token = (_CFG.webui.token or "").strip()
+        token = (_get_cfg().webui.token or "").strip()
         if not token or body.token != token:
             raise HTTPException(status_code=401, detail="口令错误")
         response.set_cookie(_COOKIE, token, httponly=True, samesite="lax", max_age=7 * 86400)
@@ -92,8 +104,9 @@ def create_app() -> FastAPI:
     @app.get("/api/overview")
     def overview(request: Request):
         _require(request)
+        engine = _get_engine()
         today = datetime.now(UTC)
-        with session_scope(_ENGINE) as db:
+        with session_scope(engine) as db:
             students = db.exec(select(Student)).all()
             sids = [s.id for s in students]
             wrongs = db.exec(select(WrongQuestion)).all()
@@ -141,7 +154,8 @@ def create_app() -> FastAPI:
     @app.get("/api/students/{sid}")
     def student_detail(sid: int, request: Request):
         _require(request)
-        with session_scope(_ENGINE) as db:
+        engine = _get_engine()
+        with session_scope(engine) as db:
             st = db.get(Student, sid)
             if st is None:
                 raise HTTPException(status_code=404, detail="学生不存在")
@@ -163,8 +177,8 @@ def create_app() -> FastAPI:
                 .limit(20)
             ).all()
         try:
-            take_daily_snapshot(_ENGINE, sid)
-            effect = effect_summary(_ENGINE, sid)
+            take_daily_snapshot(engine, sid)
+            effect = effect_summary(engine, sid)
         except Exception as exc:
             log.warning("snapshot failed in panel", error=str(exc))
             effect = {}
@@ -204,7 +218,8 @@ def create_app() -> FastAPI:
     @app.get("/api/mistakes")
     def mistakes(request: Request, student_id: int | None = None):
         _require(request)
-        with session_scope(_ENGINE) as db:
+        engine = _get_engine()
+        with session_scope(engine) as db:
             stmt = select(WrongQuestion).order_by(WrongQuestion.id.desc()).limit(200)
             if student_id:
                 stmt = select(WrongQuestion).where(
@@ -226,7 +241,8 @@ def create_app() -> FastAPI:
     @app.get("/api/schedule")
     def schedule(request: Request):
         _require(request)
-        with session_scope(_ENGINE) as db:
+        engine = _get_engine()
+        with session_scope(engine) as db:
             tasks = db.exec(
                 select(ScheduleTask)
                 .where(ScheduleTask.status == TaskStatus.PENDING)
@@ -249,7 +265,7 @@ def create_app() -> FastAPI:
         _require(request)
         from kurotutor.config.loader import redact
 
-        redacted = redact(_CFG)
+        redacted = redact(_get_cfg())
         return redacted.model_dump()
 
     # 允许面板修改的配置前缀白名单（防止越权改 permissions 等）
@@ -291,12 +307,13 @@ def create_app() -> FastAPI:
     def backup(request: Request, cloud: bool = False):
         """本地备份（cloud=false）/ 云端备份（cloud=true）。返回 {ok, detail}，错误不抛 5xx。"""
         _require(request)
-        data_dir = Path(_CFG.data_dir)
+        cfg = _get_cfg()
+        data_dir = Path(cfg.data_dir)
         if cloud:
             from kurotutor.config.loader import default_config_path
             from kurotutor.services.cloud_backup import run_cloud_backup
 
-            return run_cloud_backup(_CFG, data_dir, config_path=default_config_path())
+            return run_cloud_backup(cfg, data_dir, config_path=default_config_path())
         if not data_dir.exists():
             return {"ok": False, "detail": "数据目录不存在"}
         target_dir = data_dir / "backups"
@@ -332,7 +349,7 @@ def create_app() -> FastAPI:
         from kurotutor.services.cloud_backup import list_versions
 
         try:
-            return {"ok": True, "versions": list_versions(_CFG)}
+            return {"ok": True, "versions": list_versions(_get_cfg())}
         except Exception as exc:
             return {"ok": False, "detail": str(exc), "versions": []}
 
@@ -342,9 +359,9 @@ def create_app() -> FastAPI:
         _require(request)
         from kurotutor.services.cloud_backup import extract_backup, fetch_version
 
-        data_dir = Path(_CFG.data_dir)
+        data_dir = Path(_get_cfg().data_dir)
         try:
-            data = fetch_version(_CFG, body.version or None)
+            data = fetch_version(_get_cfg(), body.version or None)
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
         zip_path = data_dir / "backups" / f"restore_{(body.version or 'latest')[:8]}.zip"
