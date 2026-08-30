@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "KuroTutor"
-version = "0.4.0"
+version = "0.4.1"
 description = "KuroTutor：QQ 私聊里的 24 小时 AI 私人老师（全科、从零自研、开源 MIT）"
 readme = "README.md"
 requires-python = ">=3.11"
