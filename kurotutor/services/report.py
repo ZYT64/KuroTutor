@@ -93,8 +93,11 @@ def build_weekly_report(engine: Any, student_id: int, *, llm_spec: Any, workspac
     """生成周报：统计 → LLM 润色 → Word 导出。返回 {"text", "path"}。"""
     from kurotutor.services.docs import write_document
     from kurotutor.services.llm import build_llm_provider
+    from kurotutor.services.stats import effect_summary, effect_summary_text
 
     stats = gather_stats(engine, student_id)
+    effect = effect_summary(engine, student_id)
+    stats["effect_text"] = effect_summary_text(effect)
     llm = build_llm_provider(llm_spec)
 
     import asyncio as _asyncio
@@ -137,6 +140,7 @@ def build_weekly_report(engine: Any, student_id: int, *, llm_spec: Any, workspac
         f"- 知识点掌握：{stats['mastered_points']}/{stats['tracked_points']} 达到熟练",
         f"- 互动消息：{stats['practice_messages']} 条",
     ]
+    md_lines += ["", "## 学习效果", stats.get("effect_text", "")]
     if stats["weak_points"]:
         md_lines.append("- 薄弱点：" + "、".join(w["name"] for w in stats["weak_points"]))
     content = "\n".join(md_lines)

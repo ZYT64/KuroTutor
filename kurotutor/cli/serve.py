@@ -13,6 +13,7 @@ from kurotutor.cli.common import load_runtime
 from kurotutor.core import get_logger, log_event
 from kurotutor.services import scheduler
 from kurotutor.services.push import make_handlers
+from kurotutor.storage import session_scope as session_scope_or_plain
 
 from . import ui
 
@@ -88,6 +89,18 @@ def serve_command(
                         )
                     except Exception as exc:
                         log_event(log, "retention error", level="warning", error=repr(exc))
+                    try:
+                        from sqlmodel import select as _select
+
+                        from kurotutor.services.stats import take_daily_snapshot
+                        from kurotutor.storage import Student
+
+                        with session_scope_or_plain(engine) as db:
+                            sids = db.exec(_select(Student.id)).all()
+                        for sid in sids:
+                            await asyncio.to_thread(take_daily_snapshot, engine, sid)
+                    except Exception as exc:
+                        log_event(log, "snapshot error", level="warning", error=repr(exc))
                 await asyncio.sleep(_POLL_SECONDS)
 
         sched_task = asyncio.create_task(_scheduler_loop())

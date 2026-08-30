@@ -5,7 +5,7 @@
 Please do **not** open a public issue for security problems. Report privately:
 
 - Open a [GitHub security advisory](https://github.com/ZYT64/KuroTutor/security/advisories/new), or
-- Contact the maintainer via the repository owner profile.
+- Email [kurotutor@tinkmail.me](mailto:kurotutor@tinkmail.me).
 
 You will get a response within a few days. Please include a description, reproduction steps, and affected version.
 

@@ -83,6 +83,10 @@ kuro backup                   # back up all data into a single archive
 
 For container deployments, replace `kuro` with `docker compose run --rm cli kuro`.
 
+## Feedback
+
+Questions, suggestions, partnerships: [kurotutor@tinkmail.me](mailto:kurotutor@tinkmail.me), or open an [issue](https://github.com/ZYT64/KuroTutor/issues).
+
 ## License
 
 [MIT](LICENSE). Student data stays on the deployer's own server, with export and deletion built in.

@@ -256,6 +256,19 @@ class PendingRecord(SQLModel, table=True):
     created_at: datetime = Field(default_factory=utcnow)
 
 
+class MasterySnapshot(SQLModel, table=True):
+    """每日学情快照：效果周报与面板的趋势数据源（每日一行，遗忘机制可清理）。"""
+
+    id: int | None = Field(default=None, primary_key=True)
+    student_id: int = Field(index=True, foreign_key="student.id")
+    date: str = Field(index=True)  # YYYY-MM-DD
+    avg_mastery: float = 0.0  # 全科平均掌握度 0-1
+    wrong_total: int = 0  # 错题总数
+    wrong_mastered: int = 0  # 已掌握数
+    due_count: int = 0  # 今日到期未复习数
+    created_at: datetime = Field(default_factory=utcnow)
+
+
 class WorkingContext(SQLModel, table=True):
     """学生的跨轮工作上下文（每个学生一行）。
 

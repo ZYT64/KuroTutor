@@ -274,3 +274,42 @@ def test_goal_and_checkin_flow(engine, registry, tmp_path):
     assert "打卡成功" in checkin
     dup = _run(registry.execute(ctx, "daily_checkin", {"note": ""}))
     assert "已经打过卡" in dup
+
+
+# ---- 效果统计（快照 + 周报指标） ------------------------------------------------
+def test_effect_summary_and_snapshot(engine, tmp_path):
+    """每日快照落库 + 复习通过率/掌握度指标可计算。"""
+
+    from kurotutor.services import review as review_svc
+    from kurotutor.services.stats import effect_summary, effect_summary_text, take_daily_snapshot
+    from kurotutor.storage import KnowledgePoint, WrongQuestion
+
+    cfg = _cfg(tmp_path)
+    ctx = _ctx(cfg, engine)
+    sid = ctx.student.id
+    with session_scope(engine) as db:
+        kp = KnowledgePoint(
+            student_id=sid, subject="数学", chapter="方程", name="一元二次", mastery=0.4, confidence=0.8
+        )
+        db.add(kp)
+        db.flush()
+        wq = WrongQuestion(
+            student_id=sid, subject="数学", knowledge_point_id=kp.id,
+            question_text="解方程 x^2-4=0", error_type="概念不清",
+        )
+        db.add(wq)
+        db.flush()
+        wq_id = wq.id
+
+    take_daily_snapshot(engine, sid)
+    # 复习一次通过 → 状态 mastered
+    review_svc.record_review(engine, wq_id=wq_id, mastered=True)
+    take_daily_snapshot(engine, sid)
+
+    s = effect_summary(engine, sid)
+    assert s["wrong_total"] == 1 and s["wrong_mastered"] == 1
+    assert s["review_pass_rate"] == 1.0
+    assert s["mastery_now"] is not None
+    assert len(s["trend"]) >= 1
+    text = effect_summary_text(s)
+    assert "通过率" in text and "错题闭环" in text
