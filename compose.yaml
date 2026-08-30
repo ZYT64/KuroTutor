@@ -37,6 +37,8 @@ services:
   cli:
     image: kurotutor:latest
     profiles: ["cli"]
+    # 一次性命令容器以 root 跑：需要写 docker.sock（kuro upgrade 用）与挂载目录
+    user: "0:0"
     working_dir: /app/project
     volumes:
       # CLI 可能写配置（kuro config set），故可读写
