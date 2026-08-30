@@ -153,12 +153,21 @@ class QQBotpyChannel(ChannelAdapter):
                 img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
                 images = [f for f in files if Path(f).suffix.lower() in img_exts]
                 docs = [f for f in files if f not in images]
-                # 把文件类型信息告诉 Agent，让它选对工具
-                if docs and not text:
-                    names = ", ".join(Path(d).name for d in docs)
-                    text = f"我发了一些文件（{names}），请帮我看看内容。"
-                elif docs and text:
-                    text += f"\n[附带了文件：{', '.join(Path(d).name for d in docs)}]"
+                # 把文件的完整工作区路径告诉 Agent（不是文件名——Agent 猜不到路径）
+                ws = str(Path(self._workspace).resolve())
+                doc_info = []
+                for d in docs:
+                    rp = Path(d).resolve()
+                    rel = str(rp.relative_to(ws)) if str(rp).startswith(ws) else d
+                    doc_info.append(rel)
+                if doc_info and not text:
+                    text = (
+                        "我发了一些文件，解压后的路径如下：\n"
+                        + "\n".join(f"- {p}" for p in doc_info)
+                        + "\n请帮我看看内容。"
+                    )
+                elif doc_info and text:
+                    text += "\n[附带文件路径：\n" + "\n".join(f"- {p}" for p in doc_info) + "]"
                 if images and not text:
                     text = "这道题我不会，帮我看看。"
                 responses = await self._router.handle(openid, text, images)
