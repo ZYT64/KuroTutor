@@ -49,10 +49,11 @@ RUN pip install --no-cache-dir rapidocr_onnxruntime
 FROM ${BASE_IMAGE} AS runtime
 
 # onnxruntime 需要 libgomp1；libxcb1 是 pymupdf 的系统依赖；procps 提供 pgrep（健康检查用）；
-# docker cli + compose 插件让 `kuro upgrade` 能在容器内重建整台部署
+# docker cli + compose 插件让 `kuro upgrade` 能在容器内重建整台部署。
+# slim 镜像没有 curl/wget，用镜像自带的 Python 拉 GPG 密钥。
 RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g; s@https://@http://@g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null; \
     install -d -m 0755 /etc/apt/keyrings \
-    && curl -fsSL http://mirrors.aliyun.com/docker-ce/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && python -c "import urllib.request; urllib.request.urlretrieve('http://mirrors.aliyun.com/docker-ce/linux/debian/gpg', '/etc/apt/keyrings/docker.asc')" \
     && echo "deb [signed-by=/etc/apt/keyrings/docker.asc] http://mirrors.aliyun.com/docker-ce/linux/debian trixie stable" > /etc/apt/sources.list.d/docker.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps git ca-certificates curl docker-cli docker-compose-plugin \
