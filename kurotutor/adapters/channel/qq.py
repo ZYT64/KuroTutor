@@ -121,15 +121,14 @@ class QQBotpyChannel(ChannelAdapter):
     async def _on_message(self, message: Any) -> None:
         """收到一条 C2C 私聊消息：派发后台任务处理（跨学生并行、同学生串行）。"""
         openid = str(getattr(message.author, "user_openid", "") or "")
-        # 调试日志：记录消息类型与附件信息（排查文件收不到的问题）
+        # 调试日志：dump 消息与附件的全部属性（排查文件收不到的问题）
         attaches = getattr(message, "attachments", None) or []
-        att_info = [
-            {"type": getattr(a, "content_type", ""), "url": str(getattr(a, "url", ""))[:80]}
-            for a in attaches
-        ]
+        for a in attaches:
+            raw_attrs = {k: repr(v)[:120] for k, v in vars(a).items()} if hasattr(a, "__dict__") else {"_type": str(type(a))}
+            log_event(log, "qq attachment dump", **raw_attrs)
         log_event(
             log, "qq message received",
-            content=(message.content or "")[:60], attachments=att_info,
+            content=(message.content or "")[:60],
             event_type=type(message).__name__,
         )
         lock = self._locks.setdefault(openid, asyncio.Lock())
