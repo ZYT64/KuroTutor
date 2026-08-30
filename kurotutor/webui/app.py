@@ -271,9 +271,14 @@ def create_app() -> FastAPI:
         log.info("panel backup created", file=str(out), files=count)
         return {"ok": True, "file": out.name, "size_mb": round(out.stat().st_size / 1048576, 1)}
 
-    # 前端静态托管（webui/dist 存在时）
-    dist = Path(__file__).parent / "dist"
-    if dist.exists():
+    # 前端静态托管（构建产物存在时）：容器内 COPY 到 /app/kurotutor/webui/dist，
+    # 源码运行时在包目录旁。两个位置都探测。
+    dist_candidates = [
+        Path("/app/kurotutor/webui/dist"),
+        Path(__file__).parent / "dist",
+    ]
+    dist = next((d for d in dist_candidates if d.is_dir()), None)
+    if dist is not None:
 
         @app.get("/{path:path}")
         def spa(path: str):
