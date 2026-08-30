@@ -63,6 +63,24 @@ class ChannelConfig(BaseModel):
     secret: str = ""
 
 
+class BackupConfig(BaseModel):
+    """云端备份（可选）：加密后推送 Gitee 私有仓库。
+
+    gitee_repo 填『用户名/仓库名』；token 为带 repo 权限的私人令牌。
+    encrypt_password 是唯一解密凭据——丢失后云端备份永久无法恢复。
+    不配置 gitee_repo 时云端备份禁用，仅保留本地备份。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    gitee_repo: str = ""  # 如 zyt/kurotutor-backup
+    gitee_user: str = ""  # Gitee 用户名
+    gitee_token: str = ""  # 私人令牌（repo 权限）
+    encrypt_password: str = ""  # 加密口令（恢复时必需）
+    auto_enabled: bool = True  # 自动备份开关（需先配置 Gitee）
+    auto_interval_days: int = 1  # 自动备份频率：每 N 天一次（1=每天）
+
+
 class WebUIConfig(BaseModel):
     """WebUI 管理面板：只读学情查看（口令认证，默认仅局域网）。"""
 
@@ -154,6 +172,7 @@ class AppConfig(BaseModel):
     openmaic: OpenMAICConfig = Field(default_factory=OpenMAICConfig)
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     webui: WebUIConfig = Field(default_factory=WebUIConfig)
+    backup: BackupConfig = Field(default_factory=BackupConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     kb: KbConfig = Field(default_factory=KbConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

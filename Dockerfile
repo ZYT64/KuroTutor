@@ -51,7 +51,7 @@ FROM ${BASE_IMAGE} AS runtime
 # onnxruntime 需要 libgomp1；libxcb1 是 pymupdf 的系统依赖；procps 提供 pgrep（健康检查用）
 RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g; s@https://@http://@g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null; \
     apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps \
+    && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps git \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /usr/sbin/nologin kuro
 

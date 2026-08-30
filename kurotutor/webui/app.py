@@ -69,6 +69,10 @@ class SetBody(BaseModel):
     value: str
 
 
+class RestoreBody(BaseModel):
+    version: str = ""
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="KuroTutor Panel", docs_url=None, redoc_url=None)
 
@@ -251,7 +255,7 @@ def create_app() -> FastAPI:
     # 允许面板修改的配置前缀白名单（防止越权改 permissions 等）
     _EDITABLE_PREFIXES = (
         "channel.", "models.llm.", "models.vision.", "models.embedding.",
-        "models.search.", "models.qbank.", "openmaic.", "webui.token",
+        "models.search.", "models.qbank.", "openmaic.", "webui.token", "backup.",
         "retention.", "models.layout.",
     )
     _SECRET_SUFFIXES = ("api_key", "secret", "access_code", "token")
@@ -284,11 +288,17 @@ def create_app() -> FastAPI:
         return {"ok": True}
 
     @app.post("/api/backup")
-    def backup(request: Request):
+    def backup(request: Request, cloud: bool = False):
+        """本地备份（cloud=false）/ 云端备份（cloud=true）。返回 {ok, detail}，错误不抛 5xx。"""
         _require(request)
         data_dir = Path(_CFG.data_dir)
+        if cloud:
+            from kurotutor.config.loader import default_config_path
+            from kurotutor.services.cloud_backup import run_cloud_backup
+
+            return run_cloud_backup(_CFG, data_dir, config_path=default_config_path())
         if not data_dir.exists():
-            raise HTTPException(status_code=400, detail="数据目录不存在")
+            return {"ok": False, "detail": "数据目录不存在"}
         target_dir = data_dir / "backups"
         target_dir.mkdir(parents=True, exist_ok=True)
         out = target_dir / f"kuro_backup_{datetime.now():%Y%m%d_%H%M}.zip"
@@ -306,8 +316,49 @@ def create_app() -> FastAPI:
                         if f.is_file():
                             zf.write(f, arcname=str(f.relative_to(data_dir)))
                             count += 1
+        if count == 0:
+            return {"ok": False, "detail": "数据目录为空，没有可备份的内容"}
         log.info(f"panel backup created: {out} ({count} files)")
-        return {"ok": True, "file": out.name, "size_mb": round(out.stat().st_size / 1048576, 1)}
+        return {
+            "ok": True,
+            "file": out.name,
+            "size_mb": round(out.stat().st_size / 1048576, 1),
+            "detail": f"本地备份完成：{out.name}（{round(out.stat().st_size / 1048576, 1)} MB）",
+        }
+
+    @app.get("/api/backup/versions")
+    def backup_versions(request: Request):
+        _require(request)
+        from kurotutor.services.cloud_backup import list_versions
+
+        try:
+            return {"ok": True, "versions": list_versions(_CFG)}
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc), "versions": []}
+
+    @app.post("/api/backup/restore")
+    def backup_restore(body: RestoreBody, request: Request):
+        """一键回滚：按版本拉取云端备份并覆盖本地数据。"""
+        _require(request)
+        from kurotutor.services.cloud_backup import extract_backup, fetch_version
+
+        data_dir = Path(_CFG.data_dir)
+        try:
+            data = fetch_version(_CFG, body.version or None)
+        except Exception as exc:
+            return {"ok": False, "detail": str(exc)}
+        zip_path = data_dir / "backups" / f"restore_{(body.version or 'latest')[:8]}.zip"
+        zip_path.parent.mkdir(parents=True, exist_ok=True)
+        zip_path.write_bytes(data)
+        count = extract_backup(zip_path, data_dir)
+        if count == 0:
+            return {"ok": False, "detail": "备份包里没有可恢复的内容"}
+        log.info(f"panel restore done: version={body.version} files={count}")
+        short = (body.version or "latest")[:8]
+        return {
+            "ok": True,
+            "detail": f"已回滚到版本 {short}（{count} 个文件）。重启服务后完全生效。",
+        }
 
     # 前端静态托管（构建产物存在时）：容器内 COPY 到 /app/kurotutor/webui/dist，
     # 源码运行时在包目录旁。两个位置都探测。

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CopySimple, Database, FloppyDisk } from "@phosphor-icons/react";
+import { CloudArrowUp, CopySimple, Database, FloppyDisk } from "@phosphor-icons/react";
 import { api } from "../api";
 
 type Row = { key: string; value: string };
@@ -81,6 +81,27 @@ const GROUPS: {
     fields: [{ label: "访问码", key: "openmaic.access_code", secret: true }],
   },
   {
+    title: "云备份（Gitee，可选）",
+    hint: "加密后自动推送到你的 Gitee 私有仓库；仓库地址/令牌/口令都由你填写。留空 = 关闭云备份",
+    fields: [
+      {
+        label: "仓库地址",
+        key: "backup.gitee_repo",
+        placeholder: "用户名/仓库名，如 zyt/kurotutor-backup",
+      },
+      { label: "Gitee 用户名", key: "backup.gitee_user", placeholder: "Gitee 登录名" },
+      { label: "Gitee 私人令牌", key: "backup.gitee_token", secret: true },
+      {
+        label: "加密口令",
+        key: "backup.encrypt_password",
+        secret: true,
+        placeholder: "自定；丢失后云端备份无法恢复",
+      },
+      { label: "自动备份开关", key: "backup.auto_enabled", placeholder: "true / false" },
+      { label: "自动备份频率（天）", key: "backup.auto_interval_days", placeholder: "1 = 每天" },
+    ],
+  },
+  {
     title: "面板与数据",
     hint: "修改口令后需重新登录",
     fields: [
@@ -147,12 +168,30 @@ function FieldRow({
   );
 }
 
+interface CloudVersion {
+  commit: string;
+  date: string;
+  message: string;
+}
+
 export function Settings() {
   const [masked, setMasked] = useState<Row[]>([]);
   const [err, setErr] = useState("");
   const [bak, setBak] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<"local" | "cloud" | null>(null);
+  const [versions, setVersions] = useState<CloudVersion[]>([]);
+  const [verErr, setVerErr] = useState("");
+  const [restoring, setRestoring] = useState("");
   const { copy, copied } = useCopy();
+
+  function loadVersions() {
+    api<{ ok: boolean; versions: CloudVersion[]; detail?: string }>("/api/backup/versions")
+      .then((r) => {
+        setVersions(r.versions ?? []);
+        setVerErr(r.ok ? "" : r.detail ?? "");
+      })
+      .catch(() => setVerErr("云端版本获取失败（未配置或网络问题）"));
+  }
 
   function reload() {
     api<Record<string, unknown>>("/api/config")
@@ -177,19 +216,21 @@ export function Settings() {
   }
 
   useEffect(reload, []);
+  useEffect(loadVersions, []);
 
-  async function doBackup() {
-    setBusy(true);
+  async function doBackup(cloud: boolean) {
+    setBusy(cloud ? "cloud" : "local");
     setBak("");
     try {
-      const r = await api<{ ok: boolean; file: string; size_mb: number }>("/api/backup", {
-        method: "POST",
-      });
-      setBak(`备份完成：${r.file}（${r.size_mb} MB），存在服务器 data/backups/ 目录`);
+      const r = await api<{ ok: boolean; detail: string; file?: string; size_mb?: number }>(
+        "/api/backup" + (cloud ? "?cloud=true" : ""),
+        { method: "POST" },
+      );
+      setBak(r.ok ? r.detail : `备份失败：${r.detail}`);
     } catch (e) {
       setBak(e instanceof Error ? e.message : "备份失败");
     } finally {
-      setBusy(false);
+      setBusy(null);
     }
   }
 
@@ -202,19 +243,39 @@ export function Settings() {
           <div>
             <h2 className="text-sm font-medium">数据备份</h2>
             <p className="mt-0.5 text-xs text-[var(--muted)]">
-              打包学生数据（数据库/工作区/知识库）为压缩包，存在服务器 data/backups/ 目录。
+              本地备份存服务器 data/backups/；云端备份加密后推送到你的 Gitee 私有仓库（需在下方「云备份」分组配置）。
             </p>
           </div>
+        </div>
+        <div className="flex gap-3">
           <button
-            onClick={doBackup}
-            disabled={busy}
+            onClick={() => doBackup(false)}
+            disabled={busy !== null}
             className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
           >
             <Database size={16} weight="bold" />
-            {busy ? "备份中…" : "立即备份"}
+            {busy === "local" ? "备份中…" : "本地备份"}
+          </button>
+          <button
+            onClick={() => doBackup(true)}
+            disabled={busy !== null}
+            className="flex items-center gap-2 rounded-lg border border-[var(--border)] px-4 py-2 text-sm font-medium transition hover:border-[var(--accent)] active:scale-[0.98] disabled:opacity-40"
+          >
+            <CloudArrowUp size={16} weight="bold" />
+            {busy === "cloud" ? "上传中…" : "云端备份"}
           </button>
         </div>
-        {bak && <p className="text-sm">{bak}</p>}
+        {bak && (
+          <p
+            className={`mt-3 text-sm ${
+              bak.startsWith("备份完成") || bak.startsWith("云端备份完成")
+                ? "text-[var(--accent)]"
+                : "text-rose-400"
+            }`}
+          >
+            {bak}
+          </p>
+        )}
       </section>
 
       <p className="text-sm text-[var(--muted)]">

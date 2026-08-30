@@ -66,5 +66,13 @@
   "openmaic": {
     "base_url": "https://open.maic.chat",
     "access_code": ""
+  },
+  "backup": {
+    "gitee_repo": "",
+    "gitee_user": "",
+    "gitee_token": "",
+    "encrypt_password": "",
+    "auto_enabled": true,
+    "auto_interval_days": 1
   }
 }

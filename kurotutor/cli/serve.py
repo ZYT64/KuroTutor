@@ -17,6 +17,12 @@ from kurotutor.storage import session_scope as session_scope_or_plain
 
 from . import ui
 
+
+def data_dir_root() -> Path:
+    from kurotutor.config.loader import load_config
+
+    return Path(load_config().data_dir)
+
 log = get_logger("serve")
 
 # 后台调度轮询间隔（秒）
@@ -89,6 +95,7 @@ def serve_command(
                         )
                     except Exception as exc:
                         log_event(log, "retention error", level="warning", error=repr(exc))
+                    # 学情快照（效果周报/面板趋势数据源）
                     try:
                         from sqlmodel import select as _select
 
@@ -101,6 +108,34 @@ def serve_command(
                             await asyncio.to_thread(take_daily_snapshot, engine, sid)
                     except Exception as exc:
                         log_event(log, "snapshot error", level="warning", error=repr(exc))
+                    # 云备份（可选，按开关与频率）
+                    try:
+                        cfg_now = load_config()
+                        bcfg = getattr(cfg_now, "backup", None)
+                        if bcfg and getattr(bcfg, "auto_enabled", False) and bcfg.gitee_repo:
+                            interval = max(int(getattr(bcfg, "auto_interval_days", 1) or 1), 1)
+                            last_marker = data_dir_root() / "backups" / ".last_cloud_backup"
+                            due = True
+                            if last_marker.exists():
+                                from datetime import datetime as _dt
+
+                                last = _dt.strptime(last_marker.read_text().strip(), "%Y-%m-%d")
+                                due = (_dt.now() - last).days >= interval
+                            if due:
+                                from kurotutor.services.cloud_backup import run_cloud_backup
+
+                                res = await asyncio.to_thread(
+                                    run_cloud_backup,
+                                    cfg_now,
+                                    Path(cfg_now.data_dir),
+                                    config_path=data_dir_root().parent / "kuro.json",
+                                )
+                                if res["ok"]:
+                                    last_marker.parent.mkdir(parents=True, exist_ok=True)
+                                    last_marker.write_text(datetime.now().strftime("%Y-%m-%d"))
+                                log_event(log, "cloud backup", ok=res["ok"], detail=res["detail"])
+                    except Exception as exc:
+                        log_event(log, "cloud backup error", level="warning", error=repr(exc))
                 await asyncio.sleep(_POLL_SECONDS)
 
         sched_task = asyncio.create_task(_scheduler_loop())

@@ -239,3 +239,60 @@ def test_cosine_and_keyword_rerank():
     ranked = rerank_by_keyword("求根", items)
     assert len(ranked) == 1
     assert ranked[0]["question_type"] == "二次函数求根"
+
+
+# ---- 云备份（加密 / 恢复提取 / 配置门控） --------------------------------------
+def test_cloud_backup_crypto_roundtrip():
+    import secrets
+
+    from kurotutor.services.cloud_backup import decrypt_bytes, encrypt_bytes
+
+    data = secrets.token_bytes(5000)
+    enc = encrypt_bytes(data, "pw-测试-123")
+    assert enc.startswith(b"KUROENC1") and enc != data
+    assert decrypt_bytes(enc, "pw-测试-123") == data
+
+
+def test_cloud_backup_wrong_password():
+    import pytest
+
+    from kurotutor.services.cloud_backup import CloudBackupError, decrypt_bytes, encrypt_bytes
+
+    enc = encrypt_bytes(b"data", "right")
+    with pytest.raises(CloudBackupError, match="口令"):
+        decrypt_bytes(enc, "wrong")
+
+
+def test_cloud_backup_not_configured_noop(tmp_path):
+    """未配置 gitee 时云备份为安全 no-op。"""
+    from kurotutor.config.loader import load_config_from_data
+    from kurotutor.services.cloud_backup import run_cloud_backup
+
+    cfg = load_config_from_data(
+        {"models": {"llm": {"provider": "echo", "model": "echo"}}}, project_root=tmp_path
+    )
+    res = run_cloud_backup(cfg, tmp_path)
+    assert res["ok"] is False and "未配置" in res["detail"]
+
+
+def test_extract_backup_whitelist_and_traversal(tmp_path):
+    """恢复提取：只解压白名单条目，拒绝路径穿越。"""
+    import zipfile as zf
+
+    from kurotutor.services.cloud_backup import extract_backup
+
+    src = tmp_path / "b.zip"
+    with zf.ZipFile(src, "w") as z:
+        z.writestr("kurotutor.db", "db-bytes")
+        z.writestr("kuro.json", "{}")
+        z.writestr("workspaces/u1/a.txt", "hi")
+        z.writestr("evil/../../outside.txt", "bad")
+        z.writestr("unknown-dir/x.txt", "skip")
+    data_dir = tmp_path / "data"
+    n = extract_backup(src, data_dir)
+    assert n == 3
+    assert (data_dir / "kurotutor.db").read_text() == "db-bytes"
+    assert (data_dir / "kuro.json").exists()
+    assert (data_dir / "workspaces/u1/a.txt").exists()
+    assert not (tmp_path / "outside.txt").exists()
+    assert not (data_dir / "unknown-dir").exists()

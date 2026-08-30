@@ -32,6 +32,9 @@ from kurotutor.cli import (
     export as export_cmd,
 )
 from kurotutor.cli import (
+    restore as restore_cmd,
+)
+from kurotutor.cli import (
     schedule as schedule_cmd,
 )
 from kurotutor.cli import (
@@ -66,7 +69,8 @@ app.add_typer(schedule_cmd.app, name="schedule", help="定时任务管理")
 app.command("serve", help="启动服务")(serve_cmd.serve_command)
 app.command("doctor", help="健康检查")(doctor_cmd.doctor_command)
 app.command("upgrade", help="更新到最新版本（git 拉取 + 容器重建重启）")(upgrade_cmd.upgrade_command)
-app.command("backup", help="备份数据（数据库/工作区/知识库）为压缩包")(backup_cmd.backup_command)
+app.command("backup", help="备份数据为压缩包，--cloud 同时推 Gitee")(backup_cmd.backup_command)
+app.command("restore", help="从本地备份或 Gitee 云备份恢复数据")(restore_cmd.restore_command)
 
 
 @app.callback()
