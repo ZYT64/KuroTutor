@@ -147,10 +147,12 @@ class Agent:
         error = final_state.get("error", "")
         iterations = final_state.get("iterations", 0)
 
-        # 自进化：出错或迭代过多时，用 LLM 反思生成教训存起来
+        # 自进化：出错或迭代过多时，后台反思生成教训存起来
         stu = self._ctx.student
         if stu is not None and (error or iterations >= 4):
             try:
+                import asyncio as _aio
+
                 from kurotutor.services.memory import reflect_and_store_lesson
 
                 tool_calls_summary = [
@@ -158,15 +160,17 @@ class Agent:
                     for m in final_state.get("messages", [])
                     if m.get("tool_calls")
                 ]
-                reflect_and_store_lesson(
-                    self._engine,
-                    self._provider,
-                    stu.id,
-                    user_message=user_message,
-                    agent_response=final_text[:300],
-                    tool_calls=[tc for sublist in tool_calls_summary for tc in sublist],
-                    iterations=iterations,
-                    error=error,
+                _aio.ensure_future(
+                    reflect_and_store_lesson(
+                        self._engine,
+                        self._provider,
+                        stu.id,
+                        user_message=user_message,
+                        agent_response=final_text[:300],
+                        tool_calls=[tc for sublist in tool_calls_summary for tc in sublist],
+                        iterations=iterations,
+                        error=error,
+                    )
                 )
             except Exception:
                 pass  # 反思失败不影响主流程

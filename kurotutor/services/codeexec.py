@@ -45,12 +45,18 @@ def run_python(code: str, *, timeout: int = _TIMEOUT) -> dict[str, str]:
         script = Path(tmp) / "snippet.py"
         script.write_text(code, encoding="utf-8")
         try:
+            import os as _os
+
+            env = {**_os.environ, "PYTHONIOENCODING": "utf-8"}
             proc = subprocess.run(
                 [sys.executable, "-I", str(script)],
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 timeout=timeout,
                 cwd=tmp,
+                env=env,
             )
         except subprocess.TimeoutExpired as exc:
             raise ToolError(

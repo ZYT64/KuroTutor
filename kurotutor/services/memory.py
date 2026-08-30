@@ -152,7 +152,7 @@ def get_agent_lessons(engine: Any, student_id: int) -> list[str]:
         return [item["text"] for item in lessons if isinstance(item, dict) and item.get("text")]
 
 
-def reflect_and_store_lesson(
+async def reflect_and_store_lesson(
     engine: Any,
     llm: Any,
     student_id: int,
@@ -163,7 +163,7 @@ def reflect_and_store_lesson(
     iterations: int,
     error: str,
 ) -> None:
-    """对话后自我反思：如果犯错或用了太多轮，用 LLM 生成教训并存起来。"""
+    """对话后自我反思（async）：如果犯错或用了太多轮，用 LLM 生成教训并存起来。"""
     import json as _json
 
     # 只在有问题的对话后才触发反思
@@ -188,18 +188,10 @@ def reflect_and_store_lesson(
         "只输出教训文本，不要其他内容。"
     )
 
-    async def _reflect():
-        from kurotutor.services.llm import ChatMessage as CM
+    from kurotutor.services.llm import ChatMessage as CM
 
-        r = await llm.complete([CM(role="user", content=prompt)], temperature=0.3)
-        return (r.content or "").strip()[:200]
-
-    import asyncio as _aio
-
-    try:
-        lesson = _aio.run(_reflect())
-        if lesson:
-            store_agent_lesson(engine, student_id, lesson)
-            log.info("agent lesson stored", lesson=lesson[:60])
-    except Exception as exc:
-        log.warning("agent reflection failed", error=str(exc))
+    r = await llm.complete([CM(role="user", content=prompt)], temperature=0.3)
+    lesson = (r.content or "").strip()[:200]
+    if lesson:
+        store_agent_lesson(engine, student_id, lesson)
+        log.info("agent lesson stored", lesson=lesson[:60])
