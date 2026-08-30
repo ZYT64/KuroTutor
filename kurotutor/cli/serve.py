@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -139,6 +140,20 @@ def serve_command(
                 await asyncio.sleep(_POLL_SECONDS)
 
         sched_task = asyncio.create_task(_scheduler_loop())
+
+        # 管理面板内嵌启动（可选）：webui.enabled + token 时随服务运行，端口取 webui.port
+        wcfg = getattr(rt.config, "webui", None)
+        if wcfg and wcfg.enabled and (wcfg.token or "").strip():
+            def _run_panel() -> None:
+                import uvicorn
+
+                from kurotutor.webui.app import app
+
+                uvicorn.run(app, host=wcfg.host, port=wcfg.port, log_level="warning")
+
+            threading.Thread(target=_run_panel, name="webui", daemon=True).start()
+            ui.info(f"管理面板已启动：http://<本机IP>:{wcfg.port}（口令见 kuro.json webui.token）")
+
         try:
             await adapter.start()
         except Exception as exc:

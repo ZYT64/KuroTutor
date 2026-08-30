@@ -48,10 +48,14 @@ RUN pip install --no-cache-dir rapidocr_onnxruntime
 # ---------- 阶段 2：运行时 ----------
 FROM ${BASE_IMAGE} AS runtime
 
-# onnxruntime 需要 libgomp1；libxcb1 是 pymupdf 的系统依赖；procps 提供 pgrep（健康检查用）
+# onnxruntime 需要 libgomp1；libxcb1 是 pymupdf 的系统依赖；procps 提供 pgrep（健康检查用）；
+# docker cli + compose 插件让 `kuro upgrade` 能在容器内重建整台部署
 RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g; s@https://@http://@g' /etc/apt/sources.list.d/debian.sources /etc/apt/sources.list 2>/dev/null; \
-    apt-get update \
-    && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps git \
+    install -d -m 0755 /etc/apt/keyrings \
+    && curl -fsSL http://mirrors.aliyun.com/docker-ce/linux/debian/gpg -o /etc/apt/keyrings/docker.asc \
+    && echo "deb [signed-by=/etc/apt/keyrings/docker.asc] http://mirrors.aliyun.com/docker-ce/linux/debian trixie stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps git ca-certificates curl docker-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --create-home --shell /usr/sbin/nologin kuro
 

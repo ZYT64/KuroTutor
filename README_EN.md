@@ -16,7 +16,7 @@ English | [简体中文](README.md)
 
 KuroTutor is a self-hosted AI tutor that lives in QQ private chat. Students send a photo of a problem they're stuck on; the tutor walks them through the idea step by step instead of dumping a full solution. Wrong answers go into a mistake notebook and come back a few days later for spaced review — until they're mastered.
 
-Beyond Q&A, it grades whole homework pages, generates practice questions from real exam sources, turns exam papers into per-question images, schedules one-on-one lessons, and sends weekly progress reports. All management is done over the command line; there is no web UI.
+Beyond Q&A, it grades whole homework pages, generates practice questions from real exam sources, turns exam papers into per-question images, schedules one-on-one lessons, and sends weekly progress reports. Day-to-day administration happens over the command line and a built-in web panel.
 
 ## Features
 
@@ -28,6 +28,8 @@ Beyond Q&A, it grades whole homework pages, generates practice questions from re
 - Weekly reports: practice volume, mistakes, and mastery trends, exportable as Word
 - Placement test for new students to establish a starting point
 - Optional interactive classrooms powered by [OpenMAIC](https://github.com/THU-MAIC/OpenMAIC): AI teachers and classmates lecture, discuss, and draw on a whiteboard in real time
+- Web admin panel: student progress, mistake notebook, scheduling, live config editing (masked keys), light/dark themes
+- Optional encrypted cloud backup to your own Gitee private repo: full-data snapshots as daily versions with one-click rollback
 
 ## Install
 
@@ -71,7 +73,17 @@ API keys stay in your local `kuro.json` — don't commit it or share it.
 bash scripts/setup.sh    # build → guided key setup → start, in one command
 ```
 
-Images are built for amd64 and arm64, no GPU needed. Data and configuration persist through mounted volumes and survive restarts. Day-to-day administration:
+Images are built for amd64 and arm64, no GPU needed. Data and configuration persist through mounted volumes and survive restarts.
+
+### Web panel
+
+After deployment open `http://<server-ip>:8002` and sign in with the token set in `webui.token`. To change the host port, set `KURO_PANEL_PORT` in a `.env` file next to `compose.yaml`.
+
+### Encrypted cloud backup (optional)
+
+Fill in your Gitee private repo, personal token, and an encryption password under Settings → Cloud backup in the panel. KuroTutor then pushes an encrypted full-data snapshot daily as its own version — today never overwrites yesterday — with one-click rollback from the panel. Only ciphertext ever leaves your server.
+
+Day-to-day administration:
 
 ```bash
 kuro doctor                   # check config, database, models, channels

@@ -20,6 +20,9 @@ services:
     image: kurotutor:latest
     container_name: kurotutor
     restart: unless-stopped
+    ports:
+      # 管理面板端口：宿主端口可用环境变量 KURO_PANEL_PORT 覆盖（.env 或 compose 环境里设置）
+      - "${KURO_PANEL_PORT:-8002}:8001"
     volumes:
       # 配置只读挂载（含密钥，严禁提交/外传）；数据（数据库/工作区/知识库/错题导出）持久化
       - ./kuro.json:/app/kuro.json:ro
@@ -30,27 +33,18 @@ services:
     command: ["kuro", "serve", "--channel", "qq"]
 
   # 管理命令专用（不常驻）：docker compose run --rm cli kuro <命令>
+  # 挂载项目目录与 docker 套接字：kuro upgrade 在容器内即可完成整台机器的升级
   cli:
     image: kurotutor:latest
     profiles: ["cli"]
+    working_dir: /app/project
     volumes:
       # CLI 可能写配置（kuro config set），故可读写
       - ./kuro.json:/app/kuro.json:rw
       - ./data:/app/data
+      - .:/app/project
+      - /var/run/docker.sock:/var/run/docker.sock
     environment:
       TZ: Asia/Shanghai
     command: ["kuro", "--help"]
 
-  # WebUI 管理面板（只读学情查看）：http://<host>:8002 ，口令在 kuro.json 的 webui.token
-  webui:
-    image: kurotutor:latest
-    container_name: kurotutor-panel
-    restart: unless-stopped
-    ports:
-      - "8002:8001"
-    volumes:
-      - ./kuro.json:/app/kuro.json:ro
-      - ./data:/app/data
-    environment:
-      TZ: Asia/Shanghai
-    command: ["python", "-m", "uvicorn", "kurotutor.webui.app:app", "--host", "0.0.0.0", "--port", "8001"]
