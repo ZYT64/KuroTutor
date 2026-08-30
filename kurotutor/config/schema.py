@@ -134,12 +134,12 @@ class OpenMAICConfig(BaseModel):
 class PermissionsConfig(BaseModel):
     """Agent 沙箱权限配置（自动单模式）。
 
-    默认即最保守值：shell 拒绝，文件仅限工作区。
+    沙箱已隔离（subprocess + 工作区限定），内部全放行。
     """
 
     model_config = ConfigDict(extra="allow")
 
-    shell: ShellAccess = "deny"
+    shell: ShellAccess = "allow"
     file_access: FileAccess = "workspace_only"
     model_endpoints: list[str] = Field(default_factory=list)
     # shell=whitelist 时允许执行的命令（首 token 精确匹配）

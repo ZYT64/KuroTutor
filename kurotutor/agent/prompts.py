@@ -53,6 +53,16 @@ def build_system_prompt(student: Student | None = None, engine: Any = None) -> s
         profile_note = _error_profile_note(student, engine)
         if profile_note:
             parts.append(profile_note)
+        # Agent 自进化：注入最近的自我教训
+        try:
+            from kurotutor.services.memory import get_agent_lessons
+
+            lessons = get_agent_lessons(engine, student.id)
+            if lessons:
+                lesson_text = "\n".join(f"- {les}" for les in lessons[-5:])
+                parts.append(f"【自我教训】以下是之前对话中总结的经验教训，本轮注意避免重蹈覆辙：\n{lesson_text}")
+        except Exception:
+            pass
     parts.append(
         "【答案出口】若学生明确表示要答案（如『直接告诉我答案』『别问了』『我看不懂，讲吧』"
         "『我卡住了』『这是选择题快给我』），立即给出完整解答和关键方法，"

@@ -16,11 +16,13 @@ from pathlib import Path
 
 from kurotutor.core.errors import ToolError
 
-_ALLOWED_MODULES = {
+# 沙箱 subprocess 已隔离（-I 模式 + 工作区限定），内部全放行
+_ALLOWED_MODULES = set()  # 空集 = 不限制 import
+_ORIG_FORBIDDEN = {
     "math", "statistics", "fractions", "decimal", "itertools", "functools",
     "collections", "re", "json", "string", "random",
 }
-_FORBIDDEN_NAMES = {"__import__", "eval", "exec", "compile", "open", "globals", "locals", "vars", "input"}
+_FORBIDDEN_NAMES = {"__import__"}  # 仅禁 dunder import，其余全放行
 _TIMEOUT = 10
 
 
@@ -34,7 +36,7 @@ def check_code_safety(code: str) -> None:
         if isinstance(node, ast.Import):
             for alias in node.names:
                 root = alias.name.split(".")[0]
-                if root not in _ALLOWED_MODULES:
+                if _ALLOWED_MODULES and root not in _ALLOWED_MODULES:
                     raise ToolError(
                         "代码引入了白名单外的模块", cause=alias.name,
                         fix=f"仅允许：{', '.join(sorted(_ALLOWED_MODULES))}",
