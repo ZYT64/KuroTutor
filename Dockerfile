@@ -58,7 +58,8 @@ RUN sed -i 's@deb.debian.org@mirrors.tuna.tsinghua.edu.cn@g; s@https://@http://@
     && apt-get update \
     && apt-get install -y --no-install-recommends libgomp1 libxcb1 libgl1 libglib2.0-0 procps git ca-certificates curl docker-cli docker-compose-plugin \
     && rm -rf /var/lib/apt/lists/* \
-    && useradd --create-home --shell /usr/sbin/nologin kuro
+    && useradd --create-home --shell /usr/sbin/nologin kuro \
+    && git config --system --add safe.directory /app/project
 
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=webui /webui/dist /app/kurotutor/webui/dist
