@@ -15,6 +15,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -124,7 +125,10 @@ class QQBotpyChannel(ChannelAdapter):
         # 调试日志：dump 消息与附件的全部属性（排查文件收不到的问题）
         attaches = getattr(message, "attachments", None) or []
         for a in attaches:
-            raw_attrs = {k: repr(v)[:120] for k, v in vars(a).items()} if hasattr(a, "__dict__") else {"_type": str(type(a))}
+            if hasattr(a, "__dict__"):
+                raw_attrs = {k: repr(v)[:120] for k, v in vars(a).items()}
+            else:
+                raw_attrs = {"_type": str(type(a))}
             log_event(log, "qq attachment dump", **raw_attrs)
         log_event(
             log, "qq message received",
@@ -142,7 +146,17 @@ class QQBotpyChannel(ChannelAdapter):
             try:
                 await self._typing_notify(message)
                 text = message.content or ""
-                images = self._download_attachments(message)
+                files = self._download_attachments(message)
+                # 区分图片和文档：图片走 solve_photo（视觉），文档走 doc_read/ocr_read
+                img_exts = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp")
+                images = [f for f in files if Path(f).suffix.lower() in img_exts]
+                docs = [f for f in files if f not in images]
+                # 把文件类型信息告诉 Agent，让它选对工具
+                if docs and not text:
+                    names = ", ".join(Path(d).name for d in docs)
+                    text = f"我发了一个文件（{names}），请帮我看看内容。"
+                elif docs and text:
+                    text += f"\n[附带了文件：{', '.join(Path(d).name for d in docs)}]"
                 if images and not text:
                     text = "这道题我不会，帮我看看。"
                 responses = await self._router.handle(openid, text, images)
@@ -154,18 +168,39 @@ class QQBotpyChannel(ChannelAdapter):
                     await self._text_reply(message, "老师这边出了点问题，请稍后再试。")
 
     def _download_attachments(self, message: Any) -> list[str]:
-        """下载 C2C 消息里的图片/文件附件到工作区，返回本地路径列表。"""
-        from kurotutor.tools.files import save_remote_image
+        """下载 C2C 消息里的图片/文件附件到工作区，返回本地路径列表。
 
+        图片类附件存为 .png（与原有逻辑兼容）；
+        文件类附件保留原始文件名后缀（让 Agent 知道是什么类型）。
+        """
+        import httpx as _httpx
+
+        workspace = Path(self._workspace).resolve()
+        workspace.mkdir(parents=True, exist_ok=True)
         paths: list[str] = []
         for attach in getattr(message, "attachments", []) or []:
             url = getattr(attach, "url", "") or ""
             ctype = getattr(attach, "content_type", "") or ""
-            log_event(log, "qq attachment", ctype=ctype, url=url[:80])
+            filename = getattr(attach, "filename", "") or ""
+            log_event(log, "qq attachment", ctype=ctype, url=url[:80], filename=filename)
             if not url:
                 continue
             try:
-                paths.append(save_remote_image(url, self._workspace))
+                timeout = _httpx.Timeout(connect=10.0, read=60.0, write=10.0, pool=10.0)
+                resp = _httpx.get(url, timeout=timeout, follow_redirects=True)
+                resp.raise_for_status()
+                # 确定文件名：优先原始文件名，否则按内容类型生成
+                if filename and "." in filename:
+                    safe_name = "".join(c for c in filename if c not in '\\/:*?"<>|')[:80]
+                elif "image" in ctype:
+                    safe_name = f"{hashlib.md5(url.encode()).hexdigest()[:16]}.png"
+                else:
+                    safe_name = f"{hashlib.md5(url.encode()).hexdigest()[:16]}.dat"
+                dest = workspace / "incoming" / safe_name
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(resp.content)
+                paths.append(str(dest))
+                log_event(log, "attachment saved", file=safe_name, size=len(resp.content))
             except Exception as exc:
                 log_event(log, "attachment download failed", level="warning", url=url[:80], error=str(exc))
         return paths
