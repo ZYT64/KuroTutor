@@ -56,13 +56,10 @@ def test_sandbox_rejects_import_os():
         run_python("import os\nprint(os.listdir('.'))")
 
 
-def test_sandbox_rejects_eval():
-    import pytest
-
-    from kurotutor.core.errors import ToolError
-
-    with pytest.raises(ToolError):
-        run_python("eval('1+1')")
+def test_sandbox_allows_eval():
+    """沙箱全开放：eval 在隔离 subprocess 内允许。"""
+    r = run_python("print(eval('1+1'))")
+    assert "2" in r["stdout"]
 
 
 def test_sandbox_timeout_kills_loop():
