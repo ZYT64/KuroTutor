@@ -27,34 +27,14 @@ _TIMEOUT = 10
 
 
 def check_code_safety(code: str) -> None:
-    """AST 静态检查，不安全则抛 ToolError。"""
+    """AST 静态检查（沙箱全开放模式：仅拦截语法错误，import 全放行）。
+
+    安全由 subprocess -I 隔离 + 工作区限定保证，不在 AST 层限制。
+    """
     try:
-        tree = ast.parse(code)
+        ast.parse(code)
     except SyntaxError as exc:
         raise ToolError("代码语法有误", cause=str(exc)[:120], fix="检查 Python 语法") from exc
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Import):
-            for alias in node.names:
-                root = alias.name.split(".")[0]
-                if _ALLOWED_MODULES and root not in _ALLOWED_MODULES:
-                    raise ToolError(
-                        "代码引入了白名单外的模块", cause=alias.name,
-                        fix=f"仅允许：{', '.join(sorted(_ALLOWED_MODULES))}",
-                    )
-        elif isinstance(node, ast.ImportFrom):
-            root = (node.module or "").split(".")[0]
-            if root not in _ALLOWED_MODULES:
-                raise ToolError(
-                    "代码引入了白名单外的模块", cause=node.module or "",
-                    fix=f"仅允许：{', '.join(sorted(_ALLOWED_MODULES))}",
-                )
-        elif isinstance(node, ast.Name) and node.id in _FORBIDDEN_NAMES:
-            raise ToolError("代码使用了被禁止的内置函数", cause=node.id, fix="沙箱仅支持纯计算代码")
-        elif isinstance(node, ast.Attribute):
-            if node.attr.startswith("__"):
-                raise ToolError("代码访问了双下划线属性", cause=node.attr, fix="沙箱禁止访问内部属性")
-        elif isinstance(node, (ast.Await, ast.Yield)):
-            raise ToolError("代码含被禁止的语句", cause=type(node).__name__)
 
 
 def run_python(code: str, *, timeout: int = _TIMEOUT) -> dict[str, str]:
