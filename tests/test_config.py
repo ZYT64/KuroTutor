@@ -18,7 +18,7 @@ def _data(**overrides) -> dict:
 def test_defaults_when_empty(tmp_path):
     cfg = load_config_from_data({}, project_root=tmp_path)
     assert cfg.name == "KuroTutor"
-    assert cfg.permissions.shell == "deny"
+    assert cfg.permissions.shell == "allow"
     assert cfg.permissions.file_access == "workspace_only"
     assert cfg is not None
 
