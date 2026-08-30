@@ -263,7 +263,7 @@ def create_app() -> FastAPI:
                     "id": c.id,
                     "student": names.get(c.student_id, "公共") if c.student_id else "公共",
                     "subject": c.subject,
-                    "problem_type": c.problem_type,
+                    "question_type": c.question_type,
                     "method": (c.method or "")[:100],
                     "steps": (c.steps or "")[:150],
                 }
