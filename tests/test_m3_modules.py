@@ -47,13 +47,10 @@ def test_sandbox_normal_compute():
     assert "152399025" in r["stdout"]
 
 
-def test_sandbox_rejects_import_os():
-    import pytest
-
-    from kurotutor.core.errors import ToolError
-
-    with pytest.raises(ToolError):
-        run_python("import os\nprint(os.listdir('.'))")
+def test_sandbox_allows_import_os():
+    """沙箱全开放：import os 在隔离 subprocess 内允许。"""
+    r = run_python("import os\nprint(len(os.getcwd()) > 0)")
+    assert "True" in r["stdout"]
 
 
 def test_sandbox_allows_eval():
