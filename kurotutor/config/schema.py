@@ -63,6 +63,23 @@ class ChannelConfig(BaseModel):
     secret: str = ""
 
 
+class OCRConfig(BaseModel):
+    """文档 OCR 识别链（文档工具用）：按顺序尝试，任一成功即返回。
+
+    chain 默认「百度 → 腾讯 → 本地」，支持配置调整顺序或裁剪。
+    baidu/tencent 凭据未填时自动跳过该引擎；local 免费无限。
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    chain: list[str] = Field(default_factory=lambda: ["baidu", "tencent", "local"])
+    baidu_api_key: str = ""
+    baidu_secret_key: str = ""
+    tencent_secret_id: str = ""
+    tencent_secret_key: str = ""
+    mineru_token: str = ""  # MinerU 官方 API 令牌（专用解析工具用）
+
+
 class BackupConfig(BaseModel):
     """云端备份（可选）：加密后推送 Gitee 私有仓库。
 
@@ -173,6 +190,7 @@ class AppConfig(BaseModel):
     retention: RetentionConfig = Field(default_factory=RetentionConfig)
     webui: WebUIConfig = Field(default_factory=WebUIConfig)
     backup: BackupConfig = Field(default_factory=BackupConfig)
+    ocr: OCRConfig = Field(default_factory=OCRConfig)
     permissions: PermissionsConfig = Field(default_factory=PermissionsConfig)
     kb: KbConfig = Field(default_factory=KbConfig)
     paths: PathsConfig = Field(default_factory=PathsConfig)

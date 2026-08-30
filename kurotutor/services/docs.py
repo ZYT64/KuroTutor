@@ -107,7 +107,7 @@ def _read_pdf(p: Path, max_chars: int) -> str:
         for i, page in enumerate(doc, 1):
             parts.append(f"===== 第 {i} 页 =====")
             text = page.get_text("text").strip()
-            parts.append(text or "(本页无文本层，可能是扫描图)")
+            parts.append(text or "(本页无文本层，是扫描件——请改用 ocr_read 工具识别本页文字)")
             used += len(text) + 16
             if used >= max_chars:
                 parts.append("…（已达读取上限）")

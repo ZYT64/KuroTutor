@@ -296,3 +296,80 @@ def test_extract_backup_whitelist_and_traversal(tmp_path):
     assert (data_dir / "workspaces/u1/a.txt").exists()
     assert not (tmp_path / "outside.txt").exists()
     assert not (data_dir / "unknown-dir").exists()
+
+
+# ---- OCR 识别链 -----------------------------------------------------------------
+def test_ocr_chain_fallback_and_order(tmp_path):
+    """识别链按顺序尝试：前一级失败自动降级，全失败给汇总原因。"""
+    import pytest
+
+    from kurotutor.config.loader import load_config_from_data
+    from kurotutor.services.ocr import OcrError
+
+    cfg = load_config_from_data(
+        {
+            "ocr": {"chain": ["baidu", "tencent", "local"]},
+            "models": {"llm": {"provider": "echo", "model": "echo"}},
+        },
+        project_root=tmp_path,
+    )
+    calls: list[str] = []
+
+    def fake_baidu(image, cfg):
+        calls.append("baidu")
+        raise OcrError("百度失败")
+
+    def fake_tencent(image, cfg):
+        calls.append("tencent")
+        raise OcrError("腾讯失败")
+
+    def fake_local(image, cfg):
+        calls.append("local")
+        return "识别出的文字"
+
+    import kurotutor.services.ocr as ocr_svc
+
+    monkey_providers = {"baidu": fake_baidu, "tencent": fake_tencent, "local": fake_local}
+    orig = ocr_svc._PROVIDERS
+    ocr_svc._PROVIDERS = monkey_providers
+    try:
+        text, engine = ocr_svc.ocr_image_with_chain(b"img", cfg)
+    finally:
+        ocr_svc._PROVIDERS = orig
+    assert calls == ["baidu", "tencent", "local"]  # 顺序降级
+    assert engine == "local" and text == "识别出的文字"
+
+    # 全失败 → 汇总原因
+    ocr_svc._PROVIDERS = {
+        "baidu": fake_baidu,
+        "tencent": fake_tencent,
+        "local": lambda i, c: (_ for _ in ()).throw(OcrError("本地也挂了")),
+    }
+    try:
+        with pytest.raises(OcrError, match="全部识别引擎"):
+            ocr_svc.ocr_image_with_chain(b"img", cfg)
+    finally:
+        ocr_svc._PROVIDERS = orig
+
+
+def test_ocr_chain_configurable(tmp_path):
+    """识别链可配置：只留 local 就只跑 local。"""
+    from kurotutor.config.loader import load_config_from_data
+    from kurotutor.services.ocr import ocr_image_with_chain
+
+    cfg = load_config_from_data(
+        {
+            "ocr": {"chain": ["local"]},
+            "models": {"llm": {"provider": "echo", "model": "echo"}},
+        },
+        project_root=tmp_path,
+    )
+    import kurotutor.services.ocr as ocr_svc
+
+    orig = ocr_svc._PROVIDERS
+    ocr_svc._PROVIDERS = {"local": lambda i, c: "仅本地", "baidu": lambda i, c: "不应调用"}
+    try:
+        text, engine = ocr_image_with_chain(b"img", cfg)
+    finally:
+        ocr_svc._PROVIDERS = orig
+    assert engine == "local" and text == "仅本地"

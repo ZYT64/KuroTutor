@@ -271,7 +271,7 @@ def create_app() -> FastAPI:
     # 允许面板修改的配置前缀白名单（防止越权改 permissions 等）
     _EDITABLE_PREFIXES = (
         "channel.", "models.llm.", "models.vision.", "models.embedding.",
-        "models.search.", "models.qbank.", "openmaic.", "webui.token", "backup.",
+        "models.search.", "models.qbank.", "openmaic.", "webui.token", "backup.", "ocr.",
         "retention.", "models.layout.",
     )
     _SECRET_SUFFIXES = ("api_key", "secret", "access_code", "token")

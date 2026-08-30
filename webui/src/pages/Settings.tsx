@@ -76,6 +76,18 @@ const GROUPS: {
     ],
   },
   {
+    title: "文档 OCR 识别链",
+    hint: "扫描件文字识别按此顺序尝试，任一成功即止；百度/腾讯有每月免费额度，local 免费无限",
+    fields: [
+      { label: "识别链顺序", key: "ocr.chain", placeholder: "baidu,tencent,local（逗号分隔）" },
+      { label: "百度 API Key", key: "ocr.baidu_api_key", secret: true },
+      { label: "百度 Secret Key", key: "ocr.baidu_secret_key", secret: true },
+      { label: "腾讯 SecretId", key: "ocr.tencent_secret_id", secret: true },
+      { label: "腾讯 SecretKey", key: "ocr.tencent_secret_key", secret: true },
+      { label: "MinerU 令牌", key: "ocr.mineru_token", secret: true },
+    ],
+  },
+  {
     title: "互动课堂（可选）",
     hint: "OpenMAIC 托管站访问码",
     fields: [{ label: "访问码", key: "openmaic.access_code", secret: true }],

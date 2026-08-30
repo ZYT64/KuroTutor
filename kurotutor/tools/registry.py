@@ -27,6 +27,7 @@ from . import (
     kb_corpus,
     lecture_gen,
     notebook,
+    ocr_tools,
     quiz,
     report,
     review,
@@ -742,6 +743,39 @@ def build_default_registry() -> ToolRegistry:
         bank.bank_extract,
         category="bank",
         sandbox_required=True,
+    )
+
+    # 文档识别（OCR 识别链 + MinerU 复杂版面）
+    registry.register(
+        "ocr_read",
+        "识别图片或扫描 PDF 里的文字。仅在 doc_read 读取后提示『无文本层/扫描件』时才使用本工具"
+        "（有文字层的 PDF 直接用 doc_read，更快更准）。自动按配置的识别链尝试"
+        "（默认：百度 → 腾讯 → 本地，免费额度优先，引擎自动降级）。"
+        "复杂版面（大量公式/表格/双栏）请改用 mineru_parse。参数：path、max_pages。",
+        {
+            "type": "object",
+            "properties": {
+                "path": _p("图片或 PDF 的工作区路径"),
+                "max_pages": _p("PDF 最大识别页数（默认 10）"),
+            },
+            "required": ["path"],
+        },
+        ocr_tools.ocr_read,
+        category="docs",
+    )
+
+    registry.register(
+        "mineru_parse",
+        "MinerU 复杂版面解析（专用，勿滥用）：仅当扫描件经 ocr_read 识别后质量太差、"
+        "或多模态确认含大量公式/表格/双栏排版时才使用（把这类文件转成 Markdown）。"
+        "有文字层的 PDF、普通文字扫描件一律不用本工具（每日免费额度有限，解析耗时较长）。参数：path。",
+        {
+            "type": "object",
+            "properties": {"path": _p("PDF 或图片的工作区路径")},
+            "required": ["path"],
+        },
+        ocr_tools.mineru_parse,
+        category="docs",
     )
 
     # 通用文档能力（Word / PPT / PDF）

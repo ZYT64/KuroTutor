@@ -74,5 +74,17 @@
     "encrypt_password": "",
     "auto_enabled": true,
     "auto_interval_days": 1
+  },
+  "ocr": {
+    "chain": [
+      "baidu",
+      "tencent",
+      "local"
+    ],
+    "baidu_api_key": "",
+    "baidu_secret_key": "",
+    "tencent_secret_id": "",
+    "tencent_secret_key": "",
+    "mineru_token": ""
   }
 }
