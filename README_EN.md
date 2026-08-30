@@ -68,8 +68,7 @@ API keys stay in your local `kuro.json` — don't commit it or share it.
 ## Docker
 
 ```bash
-cp kuro.example.json kuro.json    # fill in your keys
-docker compose up -d
+bash scripts/setup.sh    # build → guided key setup → start, in one command
 ```
 
 Images are built for amd64 and arm64, no GPU needed. Data and configuration persist through mounted volumes and survive restarts. Day-to-day administration:

@@ -66,8 +66,7 @@ kuro serve --channel qq
 ## Docker
 
 ```bash
-cp kuro.example.json kuro.json    # 填好密钥
-docker compose up -d
+bash scripts/setup.sh    # 一条命令：构建 → 交互式引导填密钥 → 启动
 ```
 
 镜像支持 amd64 和 arm64，不需要 GPU，数据和配置通过挂载卷持久化，重启自动恢复。日常管理：
