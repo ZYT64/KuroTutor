@@ -1,9 +1,7 @@
-"""KuroTutor WebUI 管理面板（只读）。
+"""KuroTutor WebUI 管理面板。
 
-FastAPI 应用：口令认证 → 学情/错题/排课/配置(脱敏)/备份 只读 API +
-前端构建产物静态托管。写操作仍走 CLI 与 QQ 对话，面板与 CLI 不双写。
-
-启动：uvicorn kurotutor.webui.app:app --host 0.0.0.0 --port 8001
+FastAPI 应用：口令认证 → 学情/错题/排课只读 API + 配置查看与修改（校验后写盘）
++ 备份触发 + 前端构建产物静态托管。教学写操作仍走 QQ 对话，面板不碰学生数据。
 """
 
 from __future__ import annotations
@@ -64,6 +62,11 @@ def _require(request) -> None:
 
 class LoginBody(BaseModel):
     token: str
+
+
+class SetBody(BaseModel):
+    key: str
+    value: str
 
 
 def create_app() -> FastAPI:
@@ -245,6 +248,41 @@ def create_app() -> FastAPI:
         redacted = redact(_CFG)
         return redacted.model_dump()
 
+    # 允许面板修改的配置前缀白名单（防止越权改 permissions 等）
+    _EDITABLE_PREFIXES = (
+        "channel.", "models.llm.", "models.vision.", "models.embedding.",
+        "models.search.", "models.qbank.", "openmaic.", "webui.token",
+        "retention.", "models.layout.",
+    )
+    _SECRET_SUFFIXES = ("api_key", "secret", "access_code", "token")
+
+    @app.post("/api/config/set")
+    def config_set(body: SetBody, request: Request):
+        _require(request)
+        key = body.key.strip()
+        if not any(key == p.rstrip(".") or key.startswith(p) for p in _EDITABLE_PREFIXES):
+            raise HTTPException(status_code=400, detail=f"面板不允许修改配置项：{key}")
+        from kurotutor.cli.config import _coerce, _load_or_init, _set_nested, _write
+        from kurotutor.config.loader import default_config_path
+
+        path = default_config_path()
+        raw = _load_or_init(path)
+        value = body.value.strip()
+        # 密钥类字段留空 = 保持不变
+        if not value and any(key.endswith(sfx) for sfx in _SECRET_SUFFIXES):
+            return {"ok": True, "unchanged": True}
+        _set_nested(raw, key, _coerce(value))
+        try:
+            from kurotutor.config.loader import load_config_from_data, project_root_from_config_path
+
+            root = project_root_from_config_path(path)
+            load_config_from_data(raw, project_root=root)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"配置校验未通过：{exc}") from exc
+        _write(path, raw)
+        log.info(f"panel config set: {key}")
+        return {"ok": True}
+
     @app.post("/api/backup")
     def backup(request: Request):
         _require(request)
@@ -268,7 +306,7 @@ def create_app() -> FastAPI:
                         if f.is_file():
                             zf.write(f, arcname=str(f.relative_to(data_dir)))
                             count += 1
-        log.info("panel backup created", file=str(out), files=count)
+        log.info(f"panel backup created: {out} ({count} files)")
         return {"ok": True, "file": out.name, "size_mb": round(out.stat().st_size / 1048576, 1)}
 
     # 前端静态托管（构建产物存在时）：容器内 COPY 到 /app/kurotutor/webui/dist，

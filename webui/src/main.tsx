@@ -113,8 +113,8 @@ export function App() {
   if (!authed) return <Login onOk={() => setAuthed(true)} />;
 
   return (
-    <div className="flex min-h-[100dvh]">
-      <aside className="flex w-56 shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] px-3 py-5">
+    <div className="flex h-[100dvh] overflow-hidden">
+      <aside className="flex w-56 shrink-0 flex-col justify-between border-r border-[var(--border)] bg-[var(--surface)] px-3 py-5">
         <div className="mb-8 flex items-center gap-2 px-2">
           <GraduationCap size={24} className="text-[var(--accent)]" weight="duotone" />
           <span className="font-semibold tracking-tight">KuroTutor</span>
@@ -153,7 +153,7 @@ export function App() {
           退出
         </button>
       </aside>
-      <main className="mx-auto w-full max-w-6xl px-8 py-8">
+      <main className="mx-auto w-full max-w-6xl flex-1 overflow-y-auto px-8 py-8">
         {page === "dashboard" && <Dashboard />}
         {page === "students" && <Students />}
         {page === "mistakes" && <Mistakes />}
