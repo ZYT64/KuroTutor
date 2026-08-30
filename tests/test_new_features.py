@@ -308,7 +308,13 @@ def test_ocr_chain_fallback_and_order(tmp_path):
 
     cfg = load_config_from_data(
         {
-            "ocr": {"chain": ["baidu", "tencent", "local"]},
+            "ocr": {
+                "chain": ["baidu", "tencent", "local"],
+                "baidu_api_key": "test_key",
+                "baidu_secret_key": "test_secret",
+                "tencent_secret_id": "test_id",
+                "tencent_secret_key": "test_key",
+            },
             "models": {"llm": {"provider": "echo", "model": "echo"}},
         },
         project_root=tmp_path,
@@ -338,6 +344,23 @@ def test_ocr_chain_fallback_and_order(tmp_path):
         ocr_svc._PROVIDERS = orig
     assert calls == ["baidu", "tencent", "local"]  # 顺序降级
     assert engine == "local" and text == "识别出的文字"
+
+    # 凭据为空 → 引擎跳过（不再浪费时间试错）
+    cfg_no_creds = load_config_from_data(
+        {
+            "ocr": {"chain": ["baidu", "local"]},
+            "models": {"llm": {"provider": "echo", "model": "echo"}},
+        },
+        project_root=tmp_path,
+    )
+    calls.clear()
+    ocr_svc._PROVIDERS = monkey_providers
+    try:
+        text, engine = ocr_svc.ocr_image_with_chain(b"img", cfg_no_creds)
+    finally:
+        ocr_svc._PROVIDERS = orig
+    assert calls == ["local"]  # baidu 被跳过（无凭据）
+    assert engine == "local"
 
     # 全失败 → 汇总原因
     ocr_svc._PROVIDERS = {

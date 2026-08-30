@@ -170,13 +170,25 @@ _PROVIDERS = {
 
 
 def ocr_image_with_chain(image: bytes, cfg: Any) -> tuple[str, str]:
-    """按配置链识别单张图片。返回 (文本, 使用的引擎)。全链失败抛 OcrError。"""
+    """按配置链识别单张图片。返回 (文本, 使用的引擎)。全链失败抛 OcrError。
+
+    凭据为空的引擎自动跳过（不再浪费时间试错），直接走下一个。
+    """
     chain = list(getattr(cfg.ocr, "chain", None) or ["baidu", "tencent", "local"])
     errors: list[str] = []
     for name in chain:
-        fn = _PROVIDERS.get(name.strip().lower())
+        name = name.strip().lower()
+        fn = _PROVIDERS.get(name)
         if fn is None:
             errors.append(f"未知引擎 {name}")
+            continue
+        # 凭据检查：没配密钥的引擎直接跳过，不浪费时间试错
+        b = cfg.ocr
+        if name == "baidu" and not (b.baidu_api_key and b.baidu_secret_key):
+            errors.append("baidu: 未配置密钥，跳过")
+            continue
+        if name == "tencent" and not (b.tencent_secret_id and b.tencent_secret_key):
+            errors.append("tencent: 未配置密钥，跳过")
             continue
         try:
             text = fn(image, cfg)
