@@ -41,13 +41,13 @@ services:
       TZ: Asia/Shanghai
     command: ["kuro", "--help"]
 
-  # WebUI 管理面板（只读学情查看）：http://<host>:8001 ，口令在 kuro.json 的 webui.token
+  # WebUI 管理面板（只读学情查看）：http://<host>:8002 ，口令在 kuro.json 的 webui.token
   webui:
     image: kurotutor:latest
     container_name: kurotutor-panel
     restart: unless-stopped
     ports:
-      - "8001:8001"
+      - "8002:8001"
     volumes:
       - ./kuro.json:/app/kuro.json:ro
       - ./data:/app/data

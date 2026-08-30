@@ -1,9 +1,30 @@
 @import "tailwindcss";
 
-/* 单一主题锁：暗色。单一强调色锁：emerald。圆角体系锁：交互体 rounded-lg、容器 rounded-xl */
+/* 双主题：浅色默认，html.dark 切换深色。单一强调色锁：emerald 系 */
 :root {
+  color-scheme: light;
+  --bg: oklch(0.985 0 0);
+  --surface: oklch(1 0 0);
+  --surface-soft: oklch(0.97 0 0);
+  --border: oklch(0.92 0 0);
+  --text: oklch(0.25 0 0);
+  --muted: oklch(0.55 0 0);
+  --hover: oklch(0.96 0 0);
+  --accent: oklch(0.62 0.13 162);
+  --accent-text: oklch(0.99 0 0);
+}
+
+html.dark {
   color-scheme: dark;
-  --accent: oklch(0.72 0.15 162);
+  --bg: oklch(0.16 0 0);
+  --surface: oklch(0.22 0 0 / 0.55);
+  --surface-soft: oklch(0.2 0 0);
+  --border: oklch(0.3 0 0);
+  --text: oklch(0.95 0 0);
+  --muted: oklch(0.68 0 0);
+  --hover: oklch(0.26 0 0);
+  --accent: oklch(0.75 0.15 162);
+  --accent-text: oklch(0.2 0 0);
 }
 
 html,
@@ -13,11 +34,13 @@ body,
 }
 
 body {
-  @apply bg-zinc-950 text-zinc-100 antialiased;
+  background: var(--bg);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
   font-family: "Geist", ui-sans-serif, system-ui, -apple-system, "PingFang SC",
     "Microsoft YaHei", sans-serif;
 }
 
 ::selection {
-  background: color-mix(in oklch, var(--accent) 35%, transparent);
+  background: color-mix(in oklch, var(--accent) 30%, transparent);
 }

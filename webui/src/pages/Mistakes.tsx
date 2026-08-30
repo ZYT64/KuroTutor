@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type ScheduleItem } from "../api";
+import { api, TASK_KIND_CN, type ScheduleItem } from "../api";
 
 interface Mistake {
   id: number;
@@ -17,15 +17,6 @@ const STATUS_CN: Record<string, string> = {
   archived: "已归档",
 };
 
-const KIND_CN: Record<string, string> = {
-  prepare: "备课",
-  reminder: "提醒",
-  class_start: "开课",
-  class_end: "下课",
-  review: "复习推送",
-  report: "周报",
-};
-
 export function Mistakes() {
   const [rows, setRows] = useState<Mistake[]>([]);
   const [err, setErr] = useState("");
@@ -41,14 +32,14 @@ export function Mistakes() {
       <h1 className="text-2xl font-semibold tracking-tight">错题本</h1>
       {err && <p className="text-sm text-rose-400">{err}</p>}
       {rows.length === 0 ? (
-        <p className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-500">
+        <p className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">
           全库还没有错题记录。
         </p>
       ) : (
-        <div className="overflow-hidden rounded-xl border border-zinc-800">
+        <div className="overflow-hidden rounded-xl border border-[var(--border)]">
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-zinc-800 bg-zinc-900/80 text-left text-xs text-zinc-500">
+              <tr className="border-b border-[var(--border)] bg-[var(--surface-soft)] text-left text-xs text-[var(--muted)]">
                 <th className="px-4 py-2.5 font-medium">学生</th>
                 <th className="px-4 py-2.5 font-medium">学科</th>
                 <th className="px-4 py-2.5 font-medium">题目</th>
@@ -56,14 +47,14 @@ export function Mistakes() {
                 <th className="px-4 py-2.5 font-medium">状态</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-800/60">
+            <tbody className="divide-y divide-[var(--border)]">
               {rows.map((w) => (
-                <tr key={w.id} className="hover:bg-zinc-900/40">
-                  <td className="px-4 py-2.5 text-zinc-500">#{w.student_id}</td>
-                  <td className="px-4 py-2.5 text-zinc-400">{w.subject}</td>
-                  <td className="max-w-md truncate px-4 py-2.5 text-zinc-200">{w.question}</td>
-                  <td className="px-4 py-2.5 text-zinc-400">{w.error_type}</td>
-                  <td className="px-4 py-2.5 text-zinc-500">{STATUS_CN[w.status] ?? w.status}</td>
+                <tr key={w.id} className="hover:bg-[var(--hover)]">
+                  <td className="px-4 py-2.5 text-[var(--muted)]">#{w.student_id}</td>
+                  <td className="px-4 py-2.5 text-[var(--muted)]">{w.subject}</td>
+                  <td className="max-w-md truncate px-4 py-2.5 text-[var(--text)]">{w.question}</td>
+                  <td className="px-4 py-2.5 text-[var(--muted)]">{w.error_type}</td>
+                  <td className="px-4 py-2.5 text-[var(--muted)]">{STATUS_CN[w.status] ?? w.status}</td>
                 </tr>
               ))}
             </tbody>
@@ -89,18 +80,18 @@ export function Schedule() {
       <h1 className="text-2xl font-semibold tracking-tight">排课与定时任务</h1>
       {err && <p className="text-sm text-rose-400">{err}</p>}
       {rows.length === 0 ? (
-        <p className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-500">
+        <p className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">
           没有排期中的任务。
         </p>
       ) : (
-        <div className="divide-y divide-zinc-800/60 rounded-xl border border-zinc-800 bg-zinc-900/50">
+        <div className="divide-y divide-[var(--border)] rounded-xl border border-[var(--border)] bg-[var(--surface)]">
           {rows.map((t) => (
             <div key={t.id} className="flex items-center gap-4 px-5 py-3 text-sm">
-              <span className="w-24 shrink-0 rounded-md bg-zinc-800 px-2 py-0.5 text-center text-xs text-zinc-300">
-                {KIND_CN[t.kind] ?? t.kind}
+              <span className="w-24 shrink-0 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-center text-xs text-[var(--text)]">
+                {TASK_KIND_CN[t.kind] ?? t.kind}
               </span>
-              <span className="w-28 shrink-0 text-zinc-300">{t.student}</span>
-              <span className="font-mono text-xs tabular-nums text-zinc-500">
+              <span className="w-28 shrink-0 text-[var(--text)]">{t.student}</span>
+              <span className="font-mono text-xs tabular-nums text-[var(--muted)]">
                 {t.fire_at.replace("T", " ").slice(0, 16)}
               </span>
             </div>

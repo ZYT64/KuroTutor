@@ -65,41 +65,41 @@ export function Settings() {
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">设置</h1>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
+      <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
         <div className="mb-4 flex items-center justify-between">
           <div>
-            <h2 className="text-sm font-medium text-zinc-300">数据备份</h2>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <h2 className="text-sm font-medium text-[var(--text)]">数据备份</h2>
+            <p className="mt-0.5 text-xs text-[var(--muted)]">
               打包数据库与工作区到 data/backups/，与 kuro backup 命令等效。
             </p>
           </div>
           <button
             onClick={doBackup}
             disabled={busy}
-            className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-zinc-950 transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
+            className="flex items-center gap-2 rounded-lg bg-[var(--accent)] px-4 py-2 text-sm font-medium text-[var(--accent-text)] transition hover:brightness-110 active:scale-[0.98] disabled:opacity-40"
           >
             <Database size={16} weight="bold" />
             {busy ? "备份中…" : "立即备份"}
           </button>
         </div>
-        {bak && <p className="text-sm text-zinc-300">{bak}</p>}
+        {bak && <p className="text-sm text-[var(--text)]">{bak}</p>}
       </section>
 
-      <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 className="mb-4 text-sm font-medium text-zinc-300">当前配置（密钥已脱敏）</h2>
+      <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+        <h2 className="mb-4 text-sm font-medium text-[var(--text)]">当前配置（密钥已脱敏）</h2>
         {err && <p className="text-sm text-rose-400">{err}</p>}
-        {rows.length === 0 && !err && <p className="text-sm text-zinc-500">加载中…</p>}
+        {rows.length === 0 && !err && <p className="text-sm text-[var(--muted)]">加载中…</p>}
         <div className="space-y-1.5">
           {rows.map((r) => (
             <div
               key={r.key}
-              className="group flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm transition hover:bg-zinc-800/60"
+              className="group flex items-center gap-3 rounded-lg px-2 py-1.5 text-sm transition hover:bg-[var(--hover)]"
             >
-              <span className="w-72 shrink-0 truncate font-mono text-xs text-zinc-500">{r.key}</span>
-              <span className="flex-1 truncate font-mono text-xs text-zinc-200">{r.value}</span>
+              <span className="w-72 shrink-0 truncate font-mono text-xs text-[var(--muted)]">{r.key}</span>
+              <span className="flex-1 truncate font-mono text-xs text-[var(--text)]">{r.value}</span>
               <button
                 onClick={() => copy(r.value)}
-                className="shrink-0 text-zinc-600 opacity-0 transition group-hover:opacity-100 hover:text-zinc-300"
+                className="shrink-0 text-[var(--muted)] opacity-0 transition group-hover:opacity-100 hover:text-[var(--text)]"
                 title="复制"
               >
                 {copied === r.value ? (

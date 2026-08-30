@@ -62,3 +62,28 @@ export interface ScheduleItem {
   kind: string;
   fire_at: string;
 }
+
+// 面板展示用中英映射（对不懂技术的用户友好）
+export const STAGE_CN: Record<string, string> = {
+  primary: "小学",
+  junior: "初中",
+  senior: "高中",
+  university: "大学",
+};
+
+export const COURSE_STATUS_CN: Record<string, string> = {
+  planned: "待上课",
+  ready: "已备课",
+  ongoing: "进行中",
+  finished: "已结束",
+  cancelled: "已取消",
+};
+
+export const TASK_KIND_CN: Record<string, string> = {
+  prepare: "备课",
+  reminder: "提醒",
+  class_start: "开课提醒",
+  class_end: "下课",
+  review: "复习推送",
+  report: "周报",
+};

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, type Overview, type StudentDetail } from "../api";
+import { api, STAGE_CN, COURSE_STATUS_CN, type Overview, type StudentDetail } from "../api";
 
 const STATUS_CN: Record<string, string> = {
   to_review: "待复习",
@@ -26,14 +26,14 @@ export function Students() {
     }
   }, [ov]);
 
-  if (!ov) return <p className="text-sm text-zinc-500">加载中…</p>;
+  if (!ov) return <p className="text-sm text-[var(--muted)]">加载中…</p>;
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-semibold tracking-tight">学生</h1>
 
       {ov.by_student.length === 0 ? (
-        <p className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6 text-sm text-zinc-500">
+        <p className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6 text-sm text-[var(--muted)]">
           还没有学生。学生在 QQ 私聊互动后自动建档。
         </p>
       ) : (
@@ -49,8 +49,8 @@ export function Students() {
                 }
                 className={`shrink-0 rounded-lg border px-4 py-2 text-sm transition ${
                   sel?.id === s.id
-                    ? "border-[var(--accent)] bg-zinc-800 font-medium"
-                    : "border-zinc-800 text-zinc-400 hover:border-zinc-700"
+                    ? "border-[var(--accent)] bg-[var(--surface-soft)] font-medium"
+                    : "border-[var(--border)] text-[var(--muted)] hover:border-[var(--border)]"
                 }`}
               >
                 {s.nickname}
@@ -61,8 +61,8 @@ export function Students() {
           {sel && (
             <div className="space-y-6">
               <section className="grid grid-cols-1 gap-4 md:grid-cols-3">
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-                  <p className="text-sm text-zinc-400">平均掌握度</p>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <p className="text-sm text-[var(--muted)]">平均掌握度</p>
                   <p className="mt-1 font-mono text-2xl tabular-nums">
                     {sel.effect.mastery_now != null
                       ? `${Math.round(sel.effect.mastery_now * 100)}%`
@@ -79,36 +79,36 @@ export function Students() {
                     )}
                   </p>
                 </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-                  <p className="text-sm text-zinc-400">复习通过率（7 天）</p>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <p className="text-sm text-[var(--muted)]">复习通过率（7 天）</p>
                   <p className="mt-1 font-mono text-2xl tabular-nums">
                     {sel.effect.review_pass_rate != null
                       ? `${Math.round(sel.effect.review_pass_rate * 100)}%`
                       : "—"}
                   </p>
                 </div>
-                <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-4">
-                  <p className="text-sm text-zinc-400">待复习</p>
+                <div className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-4">
+                  <p className="text-sm text-[var(--muted)]">待复习</p>
                   <p className="mt-1 font-mono text-2xl tabular-nums">{sel.effect.due_count}</p>
                 </div>
               </section>
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-                <h2 className="mb-4 text-sm font-medium text-zinc-400">知识点掌握（低 → 高）</h2>
+              <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+                <h2 className="mb-4 text-sm font-medium text-[var(--muted)]">知识点掌握（低 → 高）</h2>
                 {sel.mastery.length === 0 ? (
-                  <p className="text-sm text-zinc-500">还没有画像数据。</p>
+                  <p className="text-sm text-[var(--muted)]">还没有画像数据。</p>
                 ) : (
                   <div className="space-y-2.5">
                     {sel.mastery.map((k) => (
                       <div key={`${k.subject}-${k.name}`} className="flex items-center gap-3">
-                        <span className="w-40 shrink-0 truncate text-sm text-zinc-300">{k.name}</span>
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-zinc-800">
+                        <span className="w-40 shrink-0 truncate text-sm text-[var(--text)]">{k.name}</span>
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[var(--surface-soft)]">
                           <div
                             className="h-full rounded-full bg-[var(--accent)]"
                             style={{ width: `${Math.round(k.mastery * 100)}%` }}
                           />
                         </div>
-                        <span className="w-12 text-right font-mono text-xs tabular-nums text-zinc-500">
+                        <span className="w-12 text-right font-mono text-xs tabular-nums text-[var(--muted)]">
                           {Math.round(k.mastery * 100)}%
                         </span>
                       </div>
@@ -117,20 +117,20 @@ export function Students() {
                 )}
               </section>
 
-              <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-                <h2 className="mb-4 text-sm font-medium text-zinc-400">错题（最近 100 条）</h2>
+              <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+                <h2 className="mb-4 text-sm font-medium text-[var(--muted)]">错题（最近 100 条）</h2>
                 {sel.wrongs.length === 0 ? (
-                  <p className="text-sm text-zinc-500">错题本是空的。</p>
+                  <p className="text-sm text-[var(--muted)]">错题本是空的。</p>
                 ) : (
-                  <div className="divide-y divide-zinc-800/60">
+                  <div className="divide-y divide-[var(--border)]">
                     {sel.wrongs.slice(0, 15).map((w) => (
                       <div key={w.id} className="flex items-center gap-3 py-2.5 text-sm">
-                        <span className="w-14 shrink-0 text-zinc-500">{w.subject}</span>
-                        <span className="flex-1 truncate text-zinc-200">{w.question}</span>
-                        <span className="shrink-0 rounded-md bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+                        <span className="w-14 shrink-0 text-[var(--muted)]">{w.subject}</span>
+                        <span className="flex-1 truncate text-[var(--text)]">{w.question}</span>
+                        <span className="shrink-0 rounded-md bg-[var(--surface-soft)] px-2 py-0.5 text-xs text-[var(--muted)]">
                           {w.error_type}
                         </span>
-                        <span className="w-16 shrink-0 text-right text-xs text-zinc-500">
+                        <span className="w-16 shrink-0 text-right text-xs text-[var(--muted)]">
                           {STATUS_CN[w.status] ?? w.status}
                         </span>
                       </div>
@@ -140,16 +140,16 @@ export function Students() {
               </section>
 
               {sel.courses.length > 0 && (
-                <section className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-                  <h2 className="mb-4 text-sm font-medium text-zinc-400">最近课程</h2>
-                  <div className="divide-y divide-zinc-800/60">
+                <section className="rounded-xl border border-[var(--border)] bg-[var(--surface)] p-6">
+                  <h2 className="mb-4 text-sm font-medium text-[var(--muted)]">最近课程</h2>
+                  <div className="divide-y divide-[var(--border)]">
                     {sel.courses.slice(0, 8).map((c) => (
                       <div key={c.id} className="flex items-center gap-3 py-2.5 text-sm">
-                        <span className="flex-1 truncate text-zinc-200">{c.title}</span>
-                        <span className="font-mono text-xs tabular-nums text-zinc-500">
+                        <span className="flex-1 truncate text-[var(--text)]">{c.title}</span>
+                        <span className="font-mono text-xs tabular-nums text-[var(--muted)]">
                           {c.start.replace("T", " ").slice(0, 16)}
                         </span>
-                        <span className="shrink-0 text-xs text-zinc-500">{c.status}</span>
+                        <span className="shrink-0 text-xs text-[var(--muted)]">{COURSE_STATUS_CN[c.status] ?? c.status}</span>
                       </div>
                     ))}
                   </div>
