@@ -15,7 +15,7 @@ English | [简体中文](README.md)
 
 </div>
 
-KuroTutor is a self-hosted AI tutor that lives in QQ private chat. Students send a photo of a problem they're stuck on; the tutor walks them through the idea step by step instead of dumping a full solution. Wrong answers go into a mistake notebook and come back a few days later for spaced review, until they're truly mastered.
+KuroTutor is a self-hosted AI tutor that lives in QQ private chat, with a built-in web admin panel. Students send a photo of a problem they're stuck on; the tutor walks them through the idea step by step instead of dumping a full solution. Wrong answers go into a mistake notebook and come back a few days later for spaced review, until they're truly mastered.
 
 ## Features
 
