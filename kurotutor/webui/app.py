@@ -400,25 +400,15 @@ def create_app() -> FastAPI:
     def backup_restore(body: RestoreBody, request: Request):
         """一键回滚：按版本拉取云端备份并覆盖本地数据。"""
         _require(request)
-        from kurotutor.services.cloud_backup import extract_backup, fetch_version
+        from kurotutor.services.cloud_backup import restore_from_cloud
 
-        data_dir = Path(_get_cfg().data_dir)
         try:
-            data = fetch_version(_get_cfg(), body.version or None)
+            res = restore_from_cloud(_get_cfg(), body.version or None, Path(_get_cfg().data_dir))
+            log.info(f"panel restore done: version={body.version} count={res['count']}")
+            short = (body.version or "latest")[:8]
+            return {"ok": True, "detail": f"已回滚到版本 {short}（{res['count']} 个文件）"}
         except Exception as exc:
             return {"ok": False, "detail": str(exc)}
-        zip_path = data_dir / "backups" / f"restore_{(body.version or 'latest')[:8]}.zip"
-        zip_path.parent.mkdir(parents=True, exist_ok=True)
-        zip_path.write_bytes(data)
-        count = extract_backup(zip_path, data_dir)
-        if count == 0:
-            return {"ok": False, "detail": "备份包里没有可恢复的内容"}
-        log.info(f"panel restore done: version={body.version} files={count}")
-        short = (body.version or "latest")[:8]
-        return {
-            "ok": True,
-            "detail": f"已回滚到版本 {short}（{count} 个文件）。重启服务后完全生效。",
-        }
 
     # 前端静态托管（构建产物存在时）：容器内 COPY 到 /app/kurotutor/webui/dist，
     # 源码运行时在包目录旁。两个位置都探测。

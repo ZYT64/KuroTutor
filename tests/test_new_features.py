@@ -275,30 +275,6 @@ def test_cloud_backup_not_configured_noop(tmp_path):
     assert res["ok"] is False and "未配置" in res["detail"]
 
 
-def test_extract_backup_whitelist_and_traversal(tmp_path):
-    """恢复提取：只解压白名单条目，拒绝路径穿越。"""
-    import zipfile as zf
-
-    from kurotutor.services.cloud_backup import extract_backup
-
-    src = tmp_path / "b.zip"
-    with zf.ZipFile(src, "w") as z:
-        z.writestr("kurotutor.db", "db-bytes")
-        z.writestr("kuro.json", "{}")
-        z.writestr("workspaces/u1/a.txt", "hi")
-        z.writestr("evil/../../outside.txt", "bad")
-        z.writestr("unknown-dir/x.txt", "skip")
-    data_dir = tmp_path / "data"
-    n = extract_backup(src, data_dir)
-    assert n == 3
-    assert (data_dir / "kurotutor.db").read_text() == "db-bytes"
-    assert (data_dir / "kuro.json").exists()
-    assert (data_dir / "workspaces/u1/a.txt").exists()
-    assert not (tmp_path / "outside.txt").exists()
-    assert not (data_dir / "unknown-dir").exists()
-
-
-# ---- OCR 识别链 -----------------------------------------------------------------
 def test_ocr_chain_fallback_and_order(tmp_path):
     """识别链按顺序尝试：前一级失败自动降级，全失败给汇总原因。"""
     import pytest

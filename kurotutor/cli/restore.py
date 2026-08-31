@@ -27,9 +27,8 @@ def restore_command(
     from kurotutor.config.loader import load_config
     from kurotutor.services.cloud_backup import (
         CloudBackupError,
-        extract_backup,
-        fetch_version,
         list_versions,
+        restore_from_cloud,
     )
 
     cfg = load_config()
@@ -55,30 +54,38 @@ def restore_command(
     if source == "gitee":
         ui.info("从 Gitee 拉取并解密备份……")
         try:
-            data = fetch_version(cfg, version or None)
+            res = restore_from_cloud(cfg, version or None, data_dir)
         except CloudBackupError as exc:
             ui.err(str(exc))
             raise typer.Exit(1) from exc
-        zip_path = data_dir / "backups" / f"restore_{version[:8] if version else 'latest'}.zip"
-        zip_path.parent.mkdir(parents=True, exist_ok=True)
-        zip_path.write_bytes(data)
-        ui.ok(f"已下载并解密：{zip_path.name}")
+        ui.ok(res["detail"])
     else:
         zip_path = Path(source)
         if not zip_path.exists():
             ui.err(f"备份文件不存在：{zip_path}")
             raise typer.Exit(1)
+        # 本地 zip 恢复：解压覆盖
+        import zipfile
+
+        count = 0
+        if not yes:
+            confirm = typer.confirm("恢复将覆盖当前数据，继续？")
+            if not confirm:
+                ui.info("已取消。")
+                return
+        with zipfile.ZipFile(zip_path) as zf:
+            for name in zf.namelist():
+                target = data_dir / name
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zf.open(name) as src, open(target, "wb") as dst:
+                    dst.write(src.read())
+                count += 1
+        ui.ok(f"本地恢复完成（{count} 个文件）")
+        return
 
     if not yes:
-        confirm = typer.confirm(
-            f"恢复将覆盖当前 {data_dir} 下的数据库与工作区（建议先 kuro backup）。继续？"
-        )
+        confirm = typer.confirm("恢复将覆盖当前数据，继续？")
         if not confirm:
             ui.info("已取消恢复。")
             return
-
-    count = extract_backup(zip_path, data_dir)
-    if count == 0:
-        ui.err("备份包里没有可恢复的内容。")
-        raise typer.Exit(1)
-    ui.ok(f"恢复完成（{count} 个文件，含配置）。重启服务生效：docker compose restart kuro webui")
+    ui.ok("重启服务生效：docker compose restart kuro")

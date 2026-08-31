@@ -1,12 +1,12 @@
-"""云备份（可选）：全量打包 → AES-GCM 加密 → Gitee 私有仓库版本化存储。
+"""云备份（可选）：逐文件加密 → Gitee 私有仓库版本化存储。
 
 设计：
-- 全量：数据库 + 工作区 + 知识库 + kuro.json 配置，一次打包。
-- 版本化：每天一个独立 git commit（今天不吞昨天），云端 git 历史即版本历史；
-  支持按版本一键回滚。
-- 加密在本地完成，上云的永远是密文；encrypt_password 是唯一解密凭据。
-- 未配置 gitee_repo 时云端链路自动禁用（可选项，零配置兼容）。
-- 任何失败都被捕获并返回明确原因，不影响主服务。
+- 逐文件推送：不做 zip 打包，每个文件单独加密后按原始目录结构推到 Gitee，
+  天然绕过单文件大小限制（只要单文件 < 100MB 即可）。
+- 版本化：每次备份一个 git commit，云端 git 历史即版本历史。
+- 增量：git 只传输变更文件，未修改的文件不重复上传。
+- 加密在本地完成，上云的永远是密文。
+- 超过 100MB 的单个文件跳过并记录（罕见，如用户上传的超大模型文件）。
 """
 
 from __future__ import annotations
@@ -15,7 +15,6 @@ import hashlib
 import secrets
 import subprocess
 import tempfile
-import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -28,7 +27,9 @@ _MAGIC = b"KUROENC1"
 _SALT_LEN = 16
 _NONCE_LEN = 12
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1
-_BACKUP_ITEMS = ("kurotutor.db", "workspaces", "kb", "exports")
+_BACKUP_DIRS = ("workspaces", "kb", "exports")
+_BACKUP_FILES = ("kurotutor.db", "kuro.json")
+_MAX_FILE_MB = 90  # Gitee 单文件限制 100MB，留余量
 
 
 class CloudBackupError(Exception):
@@ -36,7 +37,6 @@ class CloudBackupError(Exception):
 
 
 def is_configured(cfg: Any) -> bool:
-    """云端备份是否已配置（repo + token + 口令齐全）。"""
     b = getattr(cfg, "backup", None)
     return bool(b and b.gitee_repo and b.gitee_user and b.gitee_token and b.encrypt_password)
 
@@ -49,7 +49,6 @@ def _derive_key(password: str, salt: bytes) -> bytes:
 
 
 def encrypt_bytes(data: bytes, password: str) -> bytes:
-    """AES-GCM 加密：magic + salt + nonce + 密文。"""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     salt = secrets.token_bytes(_SALT_LEN)
@@ -60,7 +59,6 @@ def encrypt_bytes(data: bytes, password: str) -> bytes:
 
 
 def decrypt_bytes(data: bytes, password: str) -> bytes:
-    """解密；口令错误/文件损坏抛 CloudBackupError。"""
     from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
     header_len = len(_MAGIC) + _SALT_LEN + _NONCE_LEN
@@ -76,19 +74,21 @@ def decrypt_bytes(data: bytes, password: str) -> bytes:
         raise CloudBackupError("解密失败：加密口令不对，或备份文件已损坏") from exc
 
 
-# ---- 打包与恢复 --------------------------------------------------------------
+# ---- 本地打包与恢复（CLI backup/restore 用） ----------------------------------
 
 
 def make_local_backup(
     data_dir: Path, out_dir: Path | None = None, *, config_path: Path | None = None
 ) -> Path:
-    """全量打包：数据库/工作区/知识库/导出/kuro.json 配置。返回 zip 路径。"""
+    """全量打包为 zip：数据库/工作区/知识库/导出/kuro.json。返回 zip 路径。"""
+    import zipfile
+
     target_dir = out_dir or (data_dir / "backups")
     target_dir.mkdir(parents=True, exist_ok=True)
     out = target_dir / f"kuro_backup_{datetime.now():%Y%m%d_%H%M}.zip"
     count = 0
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as zf:
-        for item in _BACKUP_ITEMS:
+        for item in (*_BACKUP_DIRS, "kurotutor.db"):
             src = data_dir / item
             if not src.exists():
                 continue
@@ -110,12 +110,14 @@ def make_local_backup(
 
 
 def extract_backup(zip_path: Path, data_dir: Path) -> int:
-    """把备份 zip 解压覆盖到 data/（白名单顶层条目 + kuro.json，拒绝路径穿越）。返回文件数。"""
+    """把备份 zip 解压覆盖到 data/。返回文件数。"""
+    import zipfile
+
     count = 0
     with zipfile.ZipFile(zip_path) as zf:
         for name in zf.namelist():
             top = name.replace("\\", "/").split("/")[0]
-            if top not in (*_BACKUP_ITEMS, "kuro.json"):
+            if top not in (*_BACKUP_DIRS, "kurotutor.db", "kuro.json"):
                 continue
             if ".." in name:
                 continue
@@ -145,7 +147,6 @@ def _repo_url(cfg: Any) -> str:
 
 
 def _with_cloned_repo(cfg: Any, read_only: bool, fn) -> Any:
-    """clone（或复用临时 clone）仓库执行 fn(repo_dir)。read_only 时浅克隆提速。"""
     url = _repo_url(cfg)
     depth = ["--depth", "50"] if read_only else []
     with tempfile.TemporaryDirectory(prefix="kuro-cloud-") as td:
@@ -154,7 +155,6 @@ def _with_cloned_repo(cfg: Any, read_only: bool, fn) -> Any:
         if clone.returncode != 0:
             if read_only:
                 raise CloudBackupError(f"Gitee 拉取失败：{(clone.stderr or clone.stdout).strip()[:200]}")
-            # 空仓库无法 clone → 本地 init（首次备份）
             init = _git(["init", "-b", "main", str(repo_dir)])
             if init.returncode != 0:
                 raise CloudBackupError(f"git 初始化失败：{init.stderr.strip()[:120]}")
@@ -165,15 +165,11 @@ def _with_cloned_repo(cfg: Any, read_only: bool, fn) -> Any:
 
 
 def list_versions(cfg: Any) -> list[dict[str, str]]:
-    """列出云端备份版本（git 提交历史，新 → 旧）。"""
     if not is_configured(cfg):
         raise CloudBackupError("云备份未配置（backup.gitee_repo 为空）")
 
     def _run(repo_dir: Path) -> list[dict[str, str]]:
-        glog = _git(
-            ["log", "--date=iso-local", "--pretty=format:%H|%cI|%s"],
-            cwd=repo_dir,
-        )
+        glog = _git(["log", "--date=iso-local", "--pretty=format:%H|%cI|%s"], cwd=repo_dir)
         if glog.returncode != 0:
             raise CloudBackupError("云端仓库还没有任何备份版本")
         out = []
@@ -186,92 +182,136 @@ def list_versions(cfg: Any) -> list[dict[str, str]]:
     return _with_cloned_repo(cfg, read_only=True, fn=_run)
 
 
-def push_backup(cfg: Any, enc_path: Path) -> str:
-    """把加密备份作为新 commit 推送（版本化，不覆盖旧版本）。返回版本说明。"""
-    stamp = f"backup {datetime.now():%Y-%m-%d %H:%M}"
-
-    def _run(repo_dir: Path) -> str:
-        (repo_dir / "backup.enc").write_bytes(enc_path.read_bytes())
-        for args in (
-            ["config", "user.email", "kurotutor@backup.local"],
-            ["config", "user.name", "KuroTutor Backup"],
-            ["add", "-A"],
-        ):
-            _git(args, cwd=repo_dir)
-        commit = _git(["commit", "-m", stamp], cwd=repo_dir)
-        if commit.returncode != 0:
-            raise CloudBackupError(f"git 提交失败：{commit.stderr.strip()[:160]}")
-        branch = _git(["branch", "-M", "main"], cwd=repo_dir)  # 空仓库克隆默认 master，统一为 main
-        if branch.returncode != 0:
-            raise CloudBackupError(f"git 分支重命名失败：{branch.stderr.strip()[:120]}")
-        push = _git(["push", "origin", "main"], cwd=repo_dir)
-        if push.returncode != 0:
-            err = push.stderr.strip() or push.stdout.strip()
-            if "Authentication" in err or "403" in err:
-                raise CloudBackupError("Gitee 认证失败：检查 gitee_user / gitee_token（需 repo 权限）")
-            raise CloudBackupError(f"Gitee 推送失败：{err[:200]}")
-        return stamp
-
-    return _with_cloned_repo(cfg, read_only=False, fn=_run)
+# ---- 备份 --------------------------------------------------------------------
 
 
-def fetch_version(cfg: Any, version: str | None) -> bytes:
-    """拉取指定版本（None=最新）的备份并解密。返回 zip 字节。"""
-    if not is_configured(cfg):
-        raise CloudBackupError("云备份未配置，无法从云端恢复")
-
-    def _run(repo_dir: Path) -> bytes:
-        if version:
-            checkout = _git(["checkout", version, "--", "backup.enc"], cwd=repo_dir)
-            if checkout.returncode != 0:
-                raise CloudBackupError(f"切换到版本 {version[:8]} 失败（版本不存在？）")
-        enc = repo_dir / "backup.enc"
-        if not enc.exists():
-            raise CloudBackupError("该版本里没有备份文件（backup.enc）")
-        return decrypt_bytes(enc.read_bytes(), cfg.backup.encrypt_password)
-
-    return _with_cloned_repo(cfg, read_only=True, fn=_run)
+def _collect_files(data_dir: Path, config_path: Path | None) -> list[Path]:
+    """收集所有要备份的文件路径（全量：数据库 + 工作区 + 知识库 + 导出 + 配置）。"""
+    files: list[Path] = []
+    for item in _BACKUP_DIRS:
+        d = data_dir / item
+        if d.is_dir():
+            files.extend(f for f in d.rglob("*") if f.is_file())
+    for item in _BACKUP_FILES:
+        f = data_dir / item
+        if f.is_file():
+            files.append(f)
+    if config_path and config_path.exists():
+        files.append(config_path)
+    return files
 
 
 def run_cloud_backup(cfg: Any, data_dir: Path, *, config_path: Path | None = None) -> dict[str, Any]:
-    """完整云备份流程：全量打包 → 加密 → 推送。返回 {ok, detail}，失败不抛出。
+    """云备份：逐文件加密 → 按目录结构推送到 Gitee → git commit 版本化。
 
-    无论成败都清理临时文件（zip + enc），防止磁盘被撑爆。
+    不做 zip 打包——每个文件独立加密，天然绕过单文件大小限制。
+    返回 {ok, detail, skipped}，失败不抛出。
     """
-    zip_path: Path | None = None
-    enc_path: Path | None = None
     try:
         if not is_configured(cfg):
             return {"ok": False, "detail": "云备份未配置（backup.gitee_repo 为空），已跳过"}
-        zip_path = make_local_backup(Path(data_dir), config_path=config_path)
-        size_mb = round(zip_path.stat().st_size / 1048576, 1)
 
-        # Gitee 免费仓库单文件 ≤ 100MB（Git 指针替换后实际 ≤ 100MB），超出直接报错
-        if size_mb > 100:
-            return {
-                "ok": False,
-                "detail": (
-                    f"备份数据 {size_mb} MB 超出 Gitee 单文件 100MB 限制。"
-                    "建议：清理 data/workspaces/ 下不再需要的大文件后重试，"
-                    "或改用支持大文件的对象存储（阿里 OSS / 腾讯 COS）。"
-                ),
-            }
+        password = cfg.backup.encrypt_password
+        all_files = _collect_files(Path(data_dir), config_path)
+        if not all_files:
+            return {"ok": False, "detail": "数据目录为空，没有可备份的内容"}
 
-        enc_path = zip_path.with_suffix(".zip.enc")
-        enc_path.write_bytes(encrypt_bytes(zip_path.read_bytes(), cfg.backup.encrypt_password))
-        enc_mb = round(enc_path.stat().st_size / 1048576, 1)
-        stamp = push_backup(cfg, enc_path)
-        log.info(f"cloud backup pushed: {stamp} ({enc_mb} MB enc)")
-        return {"ok": True, "detail": f"云端备份完成（{stamp}，加密包 {enc_mb} MB）"}
+        stamp = f"backup {datetime.now():%Y-%m-%d %H:%M}"
+
+        def _push(repo_dir: Path) -> str:
+            pushed, skipped = 0, 0
+            for src in all_files:
+                # 计算在仓库中的相对路径（保持 data/ 下的目录结构）
+                try:
+                    rel = src.relative_to(data_dir)
+                except ValueError:
+                    rel = Path("kuro.json")  # config_path 不在 data_dir 下
+                # 跳过备份目录自身和 git 目录
+                if rel.parts[0] in ("backups", ".git"):
+                    continue
+                size_mb = src.stat().st_size / 1048576
+                if size_mb > _MAX_FILE_MB:
+                    skipped += 1
+                    log.warning(f"cloud backup skip (too large): {rel} {size_mb:.0f}MB")
+                    continue
+                # 加密
+                enc_data = encrypt_bytes(src.read_bytes(), password)
+                # 写入仓库（保持目录结构 + .enc 后缀）
+                dest = repo_dir / str(rel) + ".enc"
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(enc_data)
+                pushed += 1
+
+            if pushed == 0:
+                raise CloudBackupError("没有文件被推送（全部为空或超大）")
+
+            for args in (
+                ["config", "user.email", "kurotutor@backup.local"],
+                ["config", "user.name", "KuroTutor Backup"],
+                ["add", "-A"],
+            ):
+                _git(args, cwd=repo_dir)
+            commit = _git(["commit", "-m", stamp], cwd=repo_dir)
+            if commit.returncode != 0:
+                # 没有变更 = 数据没变，正常
+                if "nothing to commit" in (commit.stderr or ""):
+                    return f"{stamp}（无变更）"
+                raise CloudBackupError(f"git 提交失败：{commit.stderr.strip()[:160]}")
+            branch = _git(["branch", "-M", "main"], cwd=repo_dir)
+            if branch.returncode != 0:
+                raise CloudBackupError(f"git 分支重命名失败：{branch.stderr.strip()[:120]}")
+            push = _git(["push", "origin", "main"], cwd=repo_dir)
+            if push.returncode != 0:
+                err = push.stderr.strip() or push.stdout.strip()
+                if "Authentication" in err or "403" in err:
+                    raise CloudBackupError("Gitee 认证失败：检查 gitee_user / gitee_token")
+                raise CloudBackupError(f"Gitee 推送失败：{err[:200]}")
+            detail = f"{stamp}（{pushed} 个文件"
+            if skipped:
+                detail += f"，跳过 {skipped} 个超大文件"
+            detail += "）"
+            return detail
+
+        detail = _with_cloned_repo(cfg, read_only=False, fn=_push)
+        log.info(f"cloud backup pushed: {detail}")
+        return {"ok": True, "detail": f"云端备份完成（{detail}）"}
     except CloudBackupError as exc:
         log.warning(f"cloud backup failed: {exc}")
         return {"ok": False, "detail": str(exc)}
-    except Exception as exc:  # 兜底：任何异常不崩溃
+    except Exception as exc:
         log.warning(f"cloud backup unexpected error: {exc!r}")
-        return {"ok": False, "detail": f"云备份出现意外错误：{exc!r}（详见服务日志）"}
-    finally:
-        # 无论成败都清理临时文件，防止磁盘被反复备份撑爆
-        if zip_path and zip_path.exists():
-            zip_path.unlink(missing_ok=True)
-        if enc_path and enc_path.exists():
-            enc_path.unlink(missing_ok=True)
+        return {"ok": False, "detail": f"云备份出现意外错误：{exc!r}"}
+
+
+# ---- 恢复 --------------------------------------------------------------------
+
+
+def restore_from_cloud(cfg: Any, version: str | None, data_dir: Path) -> dict[str, Any]:
+    """从云端恢复：拉取指定版本 → 逐文件解密 → 写回 data/。返回 {count, detail}。"""
+    if not is_configured(cfg):
+        raise CloudBackupError("云备份未配置，无法从云端恢复")
+    password = cfg.backup.encrypt_password
+
+    def _restore(repo_dir: Path) -> int:
+        if version:
+            checkout = _git(["checkout", version], cwd=repo_dir)
+            if checkout.returncode != 0:
+                raise CloudBackupError(f"版本 {version[:8]} 不存在")
+        count = 0
+        for enc_file in sorted(repo_dir.rglob("*.enc")):
+            rel = enc_file.relative_to(repo_dir)
+            # 去掉 .enc 后缀得到原始路径
+            orig_rel = rel.with_suffix("")
+            if orig_rel.parts[0] in (".git",):
+                continue
+            data = decrypt_bytes(enc_file.read_bytes(), password)
+            target = data_dir / orig_rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            count += 1
+        return count
+
+    count = _with_cloned_repo(cfg, read_only=True, fn=_restore)
+    if count == 0:
+        raise CloudBackupError("云端没有可恢复的文件")
+    return {"count": count, "detail": f"已恢复 {count} 个文件到 {data_dir}"}
