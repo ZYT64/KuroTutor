@@ -203,10 +203,20 @@ class OpenAICompatProvider(LLMProvider):
             except (httpx.RequestError, httpx.TimeoutException) as exc:
                 last_err = ProviderError(
                     "无法连接模型服务",
-                    cause=str(exc),
+                    cause=f"{type(exc).__name__}: {exc}",
                     fix="检查网络与 base_url 可达性",
                 )
+                # 连接类错误：销毁旧客户端重建（陈旧连接池/断连的 keep-alive 会导致后续也失败）
+                await self._client.aclose()
+                self._client = httpx.AsyncClient(
+                    timeout=_TIMEOUT,
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
                 if attempt < _MAX_RETRIES:
+                    log.warning("connection error, rebuilding client and retrying: %s", type(exc).__name__)
                     await self._sleep_backoff(attempt)
                     continue
                 raise last_err from exc
@@ -215,6 +225,7 @@ class OpenAICompatProvider(LLMProvider):
     async def _complete_streaming(self, url: str, body: dict[str, Any]) -> ChatResult:
         """流式接收一次补全（无 tools 调用路径），跨块累积内容与用量。"""
         stream_body = {**body, "stream": True}
+        log.debug("streaming request to %s", url)
         parts: list[str] = []
         finish = "stop"
         usage: dict[str, Any] = {}

@@ -194,4 +194,4 @@ async def reflect_and_store_lesson(
     lesson = (r.content or "").strip()[:200]
     if lesson:
         store_agent_lesson(engine, student_id, lesson)
-        log.info("agent lesson stored", lesson=lesson[:60])
+        log.info("agent lesson stored: %s", lesson[:60])
