@@ -109,7 +109,7 @@ def serve_command(
                             await asyncio.to_thread(take_daily_snapshot, engine, sid)
                     except Exception as exc:
                         log_event(log, "snapshot error", level="warning", error=repr(exc))
-                    # 云备份（可选，按开关与频率）
+                    # 云备份（可选，按开关与频率；无论成败都写标记，防止失败后无限重试）
                     try:
                         cfg_now = load_config()
                         bcfg = getattr(cfg_now, "backup", None)
@@ -131,10 +131,12 @@ def serve_command(
                                     Path(cfg_now.data_dir),
                                     config_path=data_dir_root().parent / "kuro.json",
                                 )
-                                if res["ok"]:
-                                    last_marker.parent.mkdir(parents=True, exist_ok=True)
-                                    last_marker.write_text(datetime.now().strftime("%Y-%m-%d"))
-                                log_event(log, "cloud backup", ok=res["ok"], detail=res["detail"])
+                                last_marker.parent.mkdir(parents=True, exist_ok=True)
+                                last_marker.write_text(datetime.now().strftime("%Y-%m-%d"))
+                                if not res["ok"]:
+                                    log_event(log, "cloud backup failed", detail=res["detail"])
+                                else:
+                                    log_event(log, "cloud backup ok", detail=res["detail"])
                     except Exception as exc:
                         log_event(log, "cloud backup error", level="warning", error=repr(exc))
                 await asyncio.sleep(_POLL_SECONDS)

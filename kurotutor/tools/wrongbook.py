@@ -19,6 +19,22 @@ from kurotutor.storage import (
     session_scope,
 )
 
+# 固定错因标签（6 类，Agent 只能从中选，不能自创）
+ERROR_TYPES = {
+    "careless": "粗心失误",
+    "conceptual": "概念不清",
+    "method": "方法不对",
+    "computation": "计算错误",
+    "forget": "知识遗忘",
+    "unknown": "待确认",
+}
+
+
+def _validate_error_type(raw: Any) -> str:
+    """校验错因标签，不在固定集内的归为 unknown。"""
+    v = (str(raw) if raw else "").strip().lower()
+    return v if v in ERROR_TYPES else "unknown"
+
 log = get_logger("wrongbook")
 
 # 知识点归类策略：knowledge_point 是「学科/章节/名称」或纯名称
@@ -83,7 +99,7 @@ def record_wrong_question(engine: Any, student_id: int, kwargs: dict[str, Any]) 
             student_answer=(kwargs.get("student_answer") or ""),
             correct_answer=(kwargs.get("correct_answer") or ""),
             analysis=(kwargs.get("analysis") or ""),
-            error_type=(kwargs.get("error_type") or "unknown"),
+            error_type=_validate_error_type(kwargs.get("error_type")),
             status=WrongStatus.TO_REVIEW,
         )
         db.add(wq)

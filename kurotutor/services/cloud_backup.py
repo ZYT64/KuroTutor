@@ -234,21 +234,44 @@ def fetch_version(cfg: Any, version: str | None) -> bytes:
 
 
 def run_cloud_backup(cfg: Any, data_dir: Path, *, config_path: Path | None = None) -> dict[str, Any]:
-    """完整云备份流程：全量打包 → 加密 → 推送。返回 {ok, detail}，失败不抛出。"""
+    """完整云备份流程：全量打包 → 加密 → 推送。返回 {ok, detail}，失败不抛出。
+
+    无论成败都清理临时文件（zip + enc），防止磁盘被撑爆。
+    """
+    zip_path: Path | None = None
+    enc_path: Path | None = None
     try:
         if not is_configured(cfg):
             return {"ok": False, "detail": "云备份未配置（backup.gitee_repo 为空），已跳过"}
         zip_path = make_local_backup(Path(data_dir), config_path=config_path)
+        size_mb = round(zip_path.stat().st_size / 1048576, 1)
+
+        # Gitee 免费仓库单文件 ≤ 100MB（Git 指针替换后实际 ≤ 100MB），超出直接报错
+        if size_mb > 100:
+            return {
+                "ok": False,
+                "detail": (
+                    f"备份数据 {size_mb} MB 超出 Gitee 单文件 100MB 限制。"
+                    "建议：清理 data/workspaces/ 下不再需要的大文件后重试，"
+                    "或改用支持大文件的对象存储（阿里 OSS / 腾讯 COS）。"
+                ),
+            }
+
         enc_path = zip_path.with_suffix(".zip.enc")
         enc_path.write_bytes(encrypt_bytes(zip_path.read_bytes(), cfg.backup.encrypt_password))
+        enc_mb = round(enc_path.stat().st_size / 1048576, 1)
         stamp = push_backup(cfg, enc_path)
-        size_mb = round(enc_path.stat().st_size / 1048576, 1)
-        enc_path.unlink(missing_ok=True)
-        log.info(f"cloud backup pushed: {stamp} ({size_mb} MB enc)")
-        return {"ok": True, "detail": f"云端备份完成（{stamp}，加密包 {size_mb} MB）"}
+        log.info(f"cloud backup pushed: {stamp} ({enc_mb} MB enc)")
+        return {"ok": True, "detail": f"云端备份完成（{stamp}，加密包 {enc_mb} MB）"}
     except CloudBackupError as exc:
         log.warning(f"cloud backup failed: {exc}")
         return {"ok": False, "detail": str(exc)}
     except Exception as exc:  # 兜底：任何异常不崩溃
         log.warning(f"cloud backup unexpected error: {exc!r}")
         return {"ok": False, "detail": f"云备份出现意外错误：{exc!r}（详见服务日志）"}
+    finally:
+        # 无论成败都清理临时文件，防止磁盘被反复备份撑爆
+        if zip_path and zip_path.exists():
+            zip_path.unlink(missing_ok=True)
+        if enc_path and enc_path.exists():
+            enc_path.unlink(missing_ok=True)
