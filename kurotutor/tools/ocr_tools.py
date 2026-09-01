@@ -35,7 +35,7 @@ async def ocr_read(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     chain_desc = " → ".join(list(getattr(cfg.ocr, "chain", []) or ["baidu", "tencent", "local"]))
     try:
         if path.suffix.lower() == ".pdf":
-            max_pages = min(int(kwargs.get("max_pages") or 10), 30)
+            max_pages = min(int(kwargs.get("max_pages") or 5), 20)
             text, engine = await asyncio.to_thread(
                 ocr_svc.ocr_pdf_pages, path, cfg, max_pages=max_pages
             )
@@ -48,7 +48,7 @@ async def ocr_read(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     if not text.strip():
         return "识别完成，但页面上没有可识别的文字（可能是空白页或纯图片）。"
     note = f"\n\n（识别引擎：{engine}；识别链：{chain_desc}）" if engine else ""
-    return text[:20000] + note
+    return text[:5000] + note
 
 
 async def mineru_parse(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
@@ -66,7 +66,7 @@ async def mineru_parse(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         text = await asyncio.to_thread(ocr_svc.mineru_parse_file, path, ctx.config)
     except ocr_svc.OcrError as exc:
         return f"MinerU 解析失败：{exc}"
-    return text[:40000] or "（MinerU 返回了空结果）"
+    return text[:10000] or "（MinerU 返回了空结果）"
 
 
 

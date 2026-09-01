@@ -28,7 +28,7 @@ from kurotutor.core import ProviderError, get_logger
 log = get_logger("llm")
 
 # 请求超时（连接+读写）。教学场景单次对话，读放大给足时间。
-_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=10.0)
+_TIMEOUT = httpx.Timeout(connect=10.0, read=300.0, write=30.0, pool=10.0)
 # 自动重试次数（网络抖动、限流）
 _MAX_RETRIES = 2
 
