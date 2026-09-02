@@ -60,3 +60,6 @@ webui/node_modules/
 webui/dist/
 kurotutor/webui/dist/
 *.egg-info/
+
+# botpy 不在 PyPI，官方仅提供 git 安装；vendor 其 wheel 保证离线构建稳定
+!vendor/*.whl

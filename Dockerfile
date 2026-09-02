@@ -41,8 +41,11 @@ ENV PATH="/opt/venv/bin:$PATH" \
 # 安装预构建 wheel（先在宿主机执行：python -m pip wheel --no-deps -w dist .）
 # ⚠️ 不在 BuildKit 内打包：其元数据阶段在本项目上会卡死（docker run 正常，BuildKit 异常，已实测）。
 COPY dist/*.whl /tmp/
+COPY vendor/*.whl /tmp/vendor/
 RUN pip install --no-cache-dir /tmp/*.whl && rm -rf /tmp/*.whl
-RUN pip install --no-cache-dir "git+$BOTPY_GIT_URL"
+# botpy 不在 PyPI：优先装仓库内置 wheel（vendor/，代理网络不稳时构建不再失败），git 克隆兜底
+RUN pip install --no-cache-dir /tmp/vendor/*.whl || pip install --no-cache-dir "git+$BOTPY_GIT_URL"
+RUN pip install --no-cache-dir rapidocr_onnxruntime
 RUN pip install --no-cache-dir rapidocr_onnxruntime
 
 # ---------- 阶段 2：运行时 ----------
