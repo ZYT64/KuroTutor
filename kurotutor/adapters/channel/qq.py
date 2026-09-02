@@ -300,11 +300,65 @@ class QQBotpyChannel(ChannelAdapter):
             log_event(log, "typing notify failed", level="warning", error=str(exc))
 
     async def _send(self, message: Any, out: OutboundMessage) -> None:
-        """发送一条响应。图片附件需上传媒体（botpy API），此处先发文本；图片回传待媒体接口接入。"""
+        """发送一条回复：文字 + 图片/文件富媒体。"""
         if out.text:
             await self._text_reply(message, out.text)
-        if out.images:
-            log_event(log, "image reply not yet supported via botpy media upload", count=len(out.images))
+        # 图片：Rich Media 上传 → msg_type=7 发送
+        for img_path in out.images:
+            if Path(img_path).exists():
+                openid = getattr(message.author, "user_openid", "") or ""
+                sent = await self._reply_media(openid, img_path, file_type=1)
+                if not sent:
+                    await self._text_reply(message, f"📎 图片已生成但发送失败，文件路径：{img_path}")
+        # 讲义文件
+        if out.lecture_path and Path(out.lecture_path).exists():
+            openid = getattr(message.author, "user_openid", "") or ""
+            sent = await self._reply_media(openid, out.lecture_path, file_type=4)
+            if not sent:
+                await self._text_reply(message, f"📎 文件「{Path(out.lecture_path).name}」已生成但发送失败")
+
+    async def _reply_media(self, openid: str, file_path: str, file_type: int = 1) -> bool:
+        """在回复中发送图片/文件（富媒体两步：上传→msg_type=7）。
+
+        file_type: 1=图片, 4=文件。file_info 有 TTL，拿到后立即发。
+        """
+        if self._client is None or getattr(self._client, "http", None) is None:
+            return False
+        from botpy.http import Route
+
+        file_b64 = base64.b64encode(Path(file_path).read_bytes()).decode()
+        # ① 上传拿 file_info
+        try:
+            r = await self._client.http.request(
+                Route("POST", "/v2/users/{openid}/files", openid=openid),
+                json={"file_type": file_type, "file_data": file_b64, "srv_send_msg": False},
+            )
+            file_info = ""
+            if isinstance(r, dict):
+                file_info = str(r.get("file_info") or (r.get("media") or {}).get("file_info") or "")
+            if file_info:
+                await self._client.http.request(
+                    Route("POST", "/v2/users/{openid}/messages", openid=openid),
+                    json={"msg_type": 7, "msg_id": "", "msg_seq": self._next_seq(""),
+                          "media": {"file_info": file_info}},
+                )
+                log_event(log, "reply media sent", file=Path(file_path).name)
+                return True
+        except Exception as exc:
+            log_event(log, "reply media upload failed", level="warning",
+                      file=Path(file_path).name, error=repr(exc))
+        # ② 兜底：srv_send_msg=true 直发
+        try:
+            await self._client.http.request(
+                Route("POST", "/v2/users/{openid}/files", openid=openid),
+                json={"file_type": file_type, "file_data": file_b64, "srv_send_msg": True},
+            )
+            log_event(log, "reply media sent (direct)", file=Path(file_path).name)
+            return True
+        except Exception as exc:
+            log_event(log, "reply media direct send failed", level="warning",
+                      file=Path(file_path).name, error=repr(exc))
+        return False
 
     async def send(self, student_external_id: str, out: OutboundMessage) -> None:
         """主动推送（开课/复习/周报等）。
