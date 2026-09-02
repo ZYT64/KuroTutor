@@ -10,15 +10,18 @@ from kurotutor.services.codeexec import run_python
 
 
 async def code_run(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
-    """执行 Python 代码（沙箱：仅数学/统计类白名单模块，10 秒超时，无网络无文件）。
-    用于验证计算结果、检查解题数值、枚举找规律。参数：code、timeout。
+    """执行 Python 代码（隔离子进程，10 秒超时，可读写工作区文件）。
+    用于验证计算、处理数据、读写工作区文件（相对路径=工作区路径）。
+    参数：code、timeout。
     """
     code = str(kwargs.get("code") or "").strip()
     if not code:
         return "请提供要执行的 Python 代码（code）。"
     timeout = kwargs.get("timeout") or 10
     try:
-        result = await asyncio.to_thread(run_python, code, timeout=int(timeout))
+        result = await asyncio.to_thread(
+            run_python, code, timeout=int(timeout), workspace=str(ctx.workspace)
+        )
     except Exception as exc:
         return f"执行被拒绝：{exc}"
     out = result.get("stdout") or ""

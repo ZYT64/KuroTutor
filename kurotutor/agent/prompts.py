@@ -145,12 +145,14 @@ def build_system_prompt(student: Student | None = None, engine: Any = None) -> s
         "讲函数时可用 plot_function 画图辅助（图在工作区，发图给学生）。"
     )
     parts.append(
-        "【代码沙箱】code_run 是一个完全开放的 Python 执行环境（隔离 subprocess），"
+        "【代码沙箱】code_run 是一个完全开放的 Python 执行环境（隔离子进程），"
         "你可以用它做任何事：计算验证、文件读写、数据处理、import 任何标准库、"
         "甚至写脚本来解决复杂问题。不要对自己设限——你拥有完整的 Python 能力。\n"
+        "工作目录就是学生的工作区：相对路径直接读写工作区文件（如 open('incoming/试卷.pdf')、"
+        "处理题图、整理文档）。配合 send_media 可以把处理结果发给学生。\n"
         "用法建议：\n"
         "- 理科计算：先 code_run 验证再回答，确保准确\n"
-        "- 文件处理：可以直接读写工作区文件\n"
+        "- 文件处理：直接读写工作区文件\n"
         "- 数据分析：import pandas/numpy 等做复杂运算\n"
         "- 遇到不确定的问题：写代码试试看，实践出真知"
     )
