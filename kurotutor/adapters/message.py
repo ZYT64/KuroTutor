@@ -31,6 +31,7 @@ class OutboundMessage:
 
     text: str = ""
     images: list[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)  # 通用文件（文档/讲义等，以文件卡片发送）
     voice_path: str = ""
     lecture_path: str = ""  # 讲义文档落盘路径（长内容模式①）
     split: bool = True  # 是否按长内容规则分条

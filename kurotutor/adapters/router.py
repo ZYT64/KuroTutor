@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from sqlmodel import select
@@ -67,7 +68,24 @@ class Router:
         if not response.ok:
             return [OutboundMessage(text=response.error or response.text, priority=Priority.P0)]
 
-        return self._to_outbound(response.text, student_id=student_id)
+        outbound = self._to_outbound(response.text, student_id=student_id)
+        media = list(getattr(response, "media", []) or [])
+        if media and outbound:
+            self._attach_media(outbound[0], media)
+        return outbound
+
+    @staticmethod
+    def _attach_media(out: OutboundMessage, media: list[dict[str, str]]) -> None:
+        """把本轮工具生成的媒体挂到出站消息上（图片/文件分通道，去重）。"""
+        for item in media:
+            path = str(item.get("path") or "")
+            if not path or not Path(path).exists():
+                continue
+            if item.get("kind") == "image":
+                if path not in out.images:
+                    out.images.append(path)
+            elif path not in out.files:
+                out.files.append(path)
 
     def _to_outbound(
         self, text: str, *, student_id: int | None = None, priority: Priority = Priority.P0

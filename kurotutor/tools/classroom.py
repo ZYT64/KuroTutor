@@ -139,4 +139,6 @@ async def prepare_class(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         )
     except ToolError as exc:
         return f"备课失败：{exc}"
+    # 讲义自动发给学生（Word 版优先，md 兜底）
+    ctx.emit_media(str(result.get("docx_path") or result.get("lecture_path") or ""), kind="file")
     return f"{result['text']}\n讲义路径：{result['lecture_path']}"

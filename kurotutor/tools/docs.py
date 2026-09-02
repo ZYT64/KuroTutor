@@ -47,6 +47,7 @@ async def doc_write(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         out = docs_svc.write_document(_resolve(ctx, path, for_write=True), str(content))
     except Exception as exc:
         return f"生成失败：{exc}"
+    ctx.emit_media(out, kind="file")  # 生成的文档自动发给学生
     return f"文档已生成：{out}"
 
 
@@ -100,6 +101,7 @@ async def pdf_ops(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
             return "op 只支持 merge（合并）/ extract（抽页）。"
     except Exception as exc:
         return f"PDF 操作失败：{exc}"
+    ctx.emit_media(result, kind="file")  # 处理产物自动发给学生
     return f"完成：{result}"
 
 
@@ -114,4 +116,5 @@ async def doc_convert(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         result = docs_svc.convert_document(_resolve(ctx, path, for_write=False), str(out_dir), target)
     except Exception as exc:
         return f"转换失败：{exc}"
+    ctx.emit_media(result, kind="file")  # 转换产物自动发给学生
     return f"转换完成：{result}"

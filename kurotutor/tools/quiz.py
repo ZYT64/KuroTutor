@@ -390,6 +390,7 @@ async def plot_function(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         path = plot_functions(out, [str(e) for e in raw], x_min=x_min, x_max=x_max, title=title)
     except ToolError as exc:
         return f"绘图失败：{exc}"
+    ctx.emit_media(path, kind="image")  # 登记自动发给学生的图片
     return (
         f"函数图像已生成：{path}\n"
         f"包含 {len(raw)} 条曲线（{ '、'.join('y='+str(e) for e in raw)}），"

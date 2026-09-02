@@ -72,7 +72,10 @@ def test_weekly_report_generates_docx(engine, registry, monkeypatch, tmp_path):
     monkeypatch.setattr("kurotutor.services.llm.build_llm_provider", lambda spec: _Fake())
     out = _run(registry.execute(ctx, "weekly_report", {}))
     assert "周报文档已生成" in out
-    docx = out.split("周报文档已生成：")[-1].strip()
+    # 周报 Word 应登记为待发送媒体（文件真实存在）
+    assert len(ctx.produced_media) == 1
+    assert ctx.produced_media[0]["kind"] == "file"
+    docx = ctx.produced_media[0]["path"]
     assert Path(docx).exists() and Path(docx).stat().st_size > 500
 
 

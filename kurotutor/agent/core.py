@@ -41,6 +41,8 @@ class AgentResponse:
     usage: dict[str, int] = field(default_factory=dict)
     ok: bool = True
     error: str = ""
+    # 本轮工具生成的待发送媒体（{"path","kind","name"}），渠道层负责投递
+    media: list[dict[str, str]] = field(default_factory=list)
 
 
 class Agent:
@@ -182,4 +184,9 @@ class Agent:
                 error=error,
             )
 
-        return AgentResponse(text=final_text, ok=not error, error=error)
+        return AgentResponse(
+            text=final_text,
+            ok=not error,
+            error=error,
+            media=list(self._ctx.produced_media),
+        )

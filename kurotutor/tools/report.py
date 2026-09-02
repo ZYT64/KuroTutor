@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from pathlib import Path
 from typing import Any
 
 from sqlmodel import select
@@ -28,7 +29,8 @@ async def weekly_report(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     )
     lines = [result["text"]]
     if result["path"]:
-        lines.append(f"\n📄 周报文档已生成：{result['path']}")
+        ctx.emit_media(result["path"], kind="file")  # 周报 Word 自动发给学生
+        lines.append(f"\n📄 周报文档已生成：{Path(result['path']).name}，稍后发给你")
     return "\n".join(lines)
 
 

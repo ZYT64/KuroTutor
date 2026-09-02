@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 from typing import Any
 
 from kurotutor.adapters.base import ChannelAdapter
@@ -41,6 +42,10 @@ class ConsoleChannel(ChannelAdapter):
 
     async def send(self, student_external_id: str, out: OutboundMessage) -> None:
         text = out.text or ""
+        if out.images:
+            text += "\n" + "\n".join(f"[图片已发送：{Path(p).name}]" for p in out.images)
+        if out.files:
+            text += "\n" + "\n".join(f"[文件已发送：{Path(p).name}]" for p in out.files)
         if out.lecture_path:
             text += f"\n[讲义已生成：{out.lecture_path}]"
         if out.voice_path:

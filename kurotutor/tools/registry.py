@@ -26,6 +26,7 @@ from . import (
     kb,
     kb_corpus,
     lecture_gen,
+    media,
     notebook,
     ocr_tools,
     quiz,
@@ -473,6 +474,23 @@ def build_default_registry() -> ToolRegistry:
         },
         quiz.plot_function,
         category="quiz",
+        sandbox_required=True,
+    )
+
+    registry.register(
+        "send_media",
+        "把工作区里的文件发给学生（图片展示/文件卡片）。用于发送切题题图、"
+        "处理结果等工作区文件；函数图、生成的文档、讲义、周报会自动发送，无需调用本工具。",
+        {
+            "type": "object",
+            "properties": {
+                "path": _p("工作区内文件路径"),
+                "kind": _p("类型：image（以图片展示）/ file（以文件卡片发送），缺省按后缀自动判断"),
+            },
+            "required": ["path"],
+        },
+        media.send_media,
+        category="media",
         sandbox_required=True,
     )
 

@@ -13,13 +13,13 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import contextlib
 import hashlib
 from pathlib import Path
 from typing import Any
 
 from kurotutor.adapters.base import ChannelAdapter
+from kurotutor.adapters.channel.qq_media import direct_send_c2c_file, upload_c2c_file
 from kurotutor.adapters.message import OutboundMessage
 from kurotutor.adapters.router import Router
 from kurotutor.agent.registry import ToolRegistry
@@ -299,62 +299,84 @@ class QQBotpyChannel(ChannelAdapter):
         except Exception as exc:
             log_event(log, "typing notify failed", level="warning", error=str(exc))
 
+    # 单文件发送上限：官方硬限制 200MB，但整文件读入内存（树莓派也要能跑），收到 100MB
+    MEDIA_MAX_BYTES = 100 * 1024 * 1024
+
     async def _send(self, message: Any, out: OutboundMessage) -> None:
-        """发送一条回复：文字 + 图片/文件富媒体。"""
+        """发送一条回复：文字 + 图片/文件富媒体（被动回复，不占主动消息频控）。"""
+        msg_id = str(getattr(message, "id", "") or "")
         if out.text:
             await self._text_reply(message, out.text)
-        # 图片：Rich Media 上传 → msg_type=7 发送
         for img_path in out.images:
-            if Path(img_path).exists():
-                openid = getattr(message.author, "user_openid", "") or ""
-                sent = await self._reply_media(openid, img_path, file_type=1)
-                if not sent:
-                    await self._text_reply(message, f"📎 图片已生成但发送失败，文件路径：{img_path}")
-        # 讲义文件
-        if out.lecture_path and Path(out.lecture_path).exists():
-            openid = getattr(message.author, "user_openid", "") or ""
-            sent = await self._reply_media(openid, out.lecture_path, file_type=4)
-            if not sent:
-                await self._text_reply(message, f"📎 文件「{Path(out.lecture_path).name}」已生成但发送失败")
+            await self._send_one_media(message, msg_id, img_path, file_type=1,
+                                       name="图片")
+        files = list(getattr(out, "files", []) or [])
+        if out.lecture_path and out.lecture_path not in files:
+            files.append(out.lecture_path)
+        for file_path in files:
+            await self._send_one_media(message, msg_id, file_path, file_type=4,
+                                       name=Path(file_path).name)
 
-    async def _reply_media(self, openid: str, file_path: str, file_type: int = 1) -> bool:
-        """在回复中发送图片/文件（富媒体两步：上传→msg_type=7）。
+    async def _send_one_media(
+        self, message: Any, msg_id: str, path: str, *, file_type: int, name: str
+    ) -> None:
+        """发送单个媒体文件：前置校验 → 分片上传 + msg_type=7 → 失败文字兜底。"""
+        p = Path(path)
+        if not p.exists():
+            log_event(log, "media file missing", level="warning", file=path)
+            return
+        if p.stat().st_size > self.MEDIA_MAX_BYTES:
+            await self._text_reply(
+                message,
+                f"📎 {name} 生成好了，但超过了 QQ 单文件 100MB 的上限发不出来，我看看怎么给你拆小一点。",
+            )
+            return
+        openid = getattr(message.author, "user_openid", "") or ""
+        sent = await self._reply_media(openid, str(p), file_type=file_type, msg_id=msg_id)
+        if not sent:
+            await self._text_reply(
+                message,
+                f"📎 {name} 已经生成好了，但 QQ 这边暂时发不出来，需要的话跟我说一声，我换个方式给你。",
+            )
 
-        file_type: 1=图片, 4=文件。file_info 有 TTL，拿到后立即发。
+    async def _reply_media(
+        self, openid: str, file_path: str, file_type: int = 1, msg_id: str = ""
+    ) -> bool:
+        """发送图片/文件（官方四步分片上传 → msg_type=7）。
+
+        有 ``msg_id`` 走被动回复（60 分钟内最多 4 条，不占主动消息频控）；
+        无 msg_id 则为主动消息（受频控：未认证 5/qps 且 30/qpm，单好友日限 1000 条）。
+        被动发送失败（如 msg_id 过期）降级为主动直发重试一次。
         """
         if self._client is None or getattr(self._client, "http", None) is None:
             return False
         from botpy.http import Route
 
-        file_b64 = base64.b64encode(Path(file_path).read_bytes()).decode()
-        # ① 上传拿 file_info
         try:
-            r = await self._client.http.request(
-                Route("POST", "/v2/users/{openid}/files", openid=openid),
-                json={"file_type": file_type, "file_data": file_b64, "srv_send_msg": False},
-            )
-            file_info = ""
-            if isinstance(r, dict):
-                file_info = str(r.get("file_info") or (r.get("media") or {}).get("file_info") or "")
-            if file_info:
-                await self._client.http.request(
-                    Route("POST", "/v2/users/{openid}/messages", openid=openid),
-                    json={"msg_type": 7, "msg_id": "", "msg_seq": self._next_seq(""),
-                          "media": {"file_info": file_info}},
-                )
-                log_event(log, "reply media sent", file=Path(file_path).name)
-                return True
+            file_info = await upload_c2c_file(self._client.http, openid, file_path, file_type)
         except Exception as exc:
             log_event(log, "reply media upload failed", level="warning",
                       file=Path(file_path).name, error=repr(exc))
-        # ② 兜底：srv_send_msg=true 直发
+            return False
+        body: dict[str, Any] = {"msg_type": 7, "media": {"file_info": file_info}}
+        if msg_id:
+            body["msg_id"] = msg_id
+            body["msg_seq"] = self._next_seq(msg_id)
         try:
             await self._client.http.request(
-                Route("POST", "/v2/users/{openid}/files", openid=openid),
-                json={"file_type": file_type, "file_data": file_b64, "srv_send_msg": True},
+                Route("POST", "/v2/users/{openid}/messages", openid=openid), json=body,
             )
-            log_event(log, "reply media sent (direct)", file=Path(file_path).name)
+            log_event(log, "reply media sent", file=Path(file_path).name,
+                      mode="passive" if msg_id else "active")
             return True
+        except Exception as exc:
+            log_event(log, "reply media send failed", level="warning",
+                      file=Path(file_path).name, error=repr(exc), had_msg_id=bool(msg_id))
+        # 降级：重新上传并 srv_send_msg=true 直发（主动消息，一步完成）
+        try:
+            if await direct_send_c2c_file(self._client.http, openid, file_path, file_type):
+                log_event(log, "reply media sent (direct)", file=Path(file_path).name)
+                return True
         except Exception as exc:
             log_event(log, "reply media direct send failed", level="warning",
                       file=Path(file_path).name, error=repr(exc))
@@ -363,9 +385,9 @@ class QQBotpyChannel(ChannelAdapter):
     async def send(self, student_external_id: str, out: OutboundMessage) -> None:
         """主动推送（开课/复习/周报等）。
 
-        官方规则：单聊主动消息每日上限 1000 条/用户（20/qpm）；用户在客户端
-        关闭「允许主动发送」后一律失败——失败记日志降级，不重试轰炸。
-        文件按官方富媒体流程：整文件上传拿 file_info → msg_type=7 发送。
+        官方频控（2026-07 文档）：Bot 维度未认证 5/qps 且 30/qpm；
+        单关系维度 20/qpm，每个好友每天最多接收 1000 条——失败记日志降级，
+        不重试轰炸。媒体走官方四步分片上传 → msg_type=7。
         """
         if self._client is None:
             log_event(log, "qq proactive send skipped: client not ready", student=student_external_id)
@@ -373,8 +395,11 @@ class QQBotpyChannel(ChannelAdapter):
         from botpy.http import Route
 
         try:
+            for img_path in out.images:
+                if Path(img_path).exists():
+                    await self._reply_media(student_external_id, img_path, file_type=1)
             if out.lecture_path and Path(out.lecture_path).exists():
-                sent = await self._send_file(student_external_id, out.lecture_path)
+                sent = await self._reply_media(student_external_id, out.lecture_path, file_type=4)
                 if not sent:
                     out.text = (out.text + f"\n📎 讲义文件「{Path(out.lecture_path).name}」生成好了，"
                                 "但这条通道暂时发不了文件，需要的话说一声我用别的方式给你。").strip()
@@ -388,46 +413,6 @@ class QQBotpyChannel(ChannelAdapter):
         except Exception as exc:
             log_event(log, "qq proactive push failed", level="warning",
                       student=student_external_id, error=repr(exc))
-
-    async def _send_file(self, openid: str, path: str) -> bool:
-        """按官方富媒体流程发文件：POST /files 上传（srv_send_msg=false）拿
-        file_info → msg_type=7 + media.file_info 发送。整文件上传失败时兜底
-        尝试 srv_send_msg=true 直发。file_info 有 ttl，拿到立即发送。"""
-        from botpy.http import Route
-
-        file_b64 = base64.b64encode(Path(path).read_bytes()).decode()
-        try:
-            r = await self._client.http.request(
-                Route("POST", "/v2/users/{openid}/files", openid=openid),
-                json={"file_type": 4, "file_data": file_b64, "srv_send_msg": False},
-            )
-            file_info = ""
-            if isinstance(r, dict):
-                file_info = str(r.get("file_info") or (r.get("media") or {}).get("file_info") or "")
-            if file_info:
-                await self._client.http.request(
-                    Route("POST", "/v2/users/{openid}/messages", openid=openid),
-                    json={"msg_type": 7, "msg_id": "", "msg_seq": self._next_seq(""),
-                          "media": {"file_info": file_info}},
-                )
-                log_event(log, "qq file sent (media)", student=openid, file=Path(path).name)
-                return True
-            log_event(log, "qq file upload returned no file_info", level="warning", file=Path(path).name)
-        except Exception as exc:
-            log_event(log, "qq file upload failed, trying direct send", level="warning",
-                      file=Path(path).name, error=repr(exc))
-        # 兜底：srv_send_msg=true 直发（部分版本支持）
-        try:
-            await self._client.http.request(
-                Route("POST", "/v2/users/{openid}/files", openid=openid),
-                json={"file_type": 4, "file_data": file_b64, "srv_send_msg": True},
-            )
-            log_event(log, "qq file sent (direct)", student=openid, file=Path(path).name)
-            return True
-        except Exception as exc:
-            log_event(log, "qq file direct send failed", level="warning",
-                      file=Path(path).name, error=repr(exc))
-            return False
 
     async def close(self) -> None:
         if self._client is not None:
