@@ -30,6 +30,7 @@ from . import (
     notebook,
     ocr_tools,
     quiz,
+    reminder,
     report,
     review,
     school,
@@ -492,6 +493,44 @@ def build_default_registry() -> ToolRegistry:
         media.send_media,
         category="media",
         sandbox_required=True,
+    )
+
+    registry.register(
+        "set_reminder",
+        "设置定时提醒，到点会主动给学生发消息。学生说『X点提醒我…』『过一会儿提醒我…』时使用。",
+        {
+            "type": "object",
+            "properties": {
+                "time": _p(
+                    "提醒时间：ISO 时间（2026-09-07T15:00，自然语言请先换算成这个格式）"
+                    "或相对时间（30分钟后）"
+                ),
+                "text": _p("提醒内容（到点原样推送给学生）"),
+            },
+            "required": ["time", "text"],
+        },
+        reminder.set_reminder,
+        category="schedule",
+    )
+
+    registry.register(
+        "reminder_list",
+        "列出学生还未触发的提醒（含编号，取消时用）。",
+        {"type": "object", "properties": {}},
+        reminder.reminder_list,
+        category="schedule",
+    )
+
+    registry.register(
+        "reminder_cancel",
+        "取消一条还没触发的提醒。参数：task_id（reminder_list 里查到的编号）。",
+        {
+            "type": "object",
+            "properties": {"task_id": _p("提醒编号")},
+            "required": ["task_id"],
+        },
+        reminder.reminder_cancel,
+        category="schedule",
     )
 
     registry.register(

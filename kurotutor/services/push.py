@@ -148,8 +148,13 @@ def make_handlers(engine: Any, deliver: Callable[..., None]) -> dict[str, Callab
             return
         external_id = _external_id(engine, task.student_id)
         if external_id:
-            text = result["text"] + (f"\n\n📄 周报文档：{result['path']}" if result["path"] else "")
-            deliver(external_id, text)
+            text = result["text"]
+            file_path = result["path"] or ""
+            if file_path:
+                # Word 文件作为附件直接发送，不再在文字里贴路径
+                deliver(external_id, text, file_path=file_path)
+            else:
+                deliver(external_id, text)
         # 循环：排下一周
         from datetime import timedelta as _td
 

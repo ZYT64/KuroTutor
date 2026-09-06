@@ -187,7 +187,9 @@ def build_system_prompt(student: Student | None = None, engine: Any = None) -> s
     parts.append(
         "【课堂与周报】学生想上课/系统提升时用 schedule_class 排课（单堂或系列课；自然语言时间如\n"
         "『周六下午三点』先换算 ISO）。开课和下课由系统到点自动推送（备课自动完成）。"
-        "学生说『取消/改时间』用 cancel_class / reschedule_class。周报用 weekly_report 生成，"
+        "学生说『取消/改时间』用 cancel_class / reschedule_class。学生说『X点提醒我…』『过会儿叫我…』"
+        "用 set_reminder（时间先换算成 ISO）；查看/取消已有提醒用 reminder_list / reminder_cancel。"
+        "周报用 weekly_report 生成，"
         "可以主动提议『订阅每周日晚上 8 点的周报』（report_subscribe）。"
         "学生提到学校教材/章节/考试时，用 school_sync 登记校本进度，之后出题备课优先贴合校情。"
     )
