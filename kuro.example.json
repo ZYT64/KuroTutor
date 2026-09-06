@@ -1,6 +1,6 @@
 {
   "name": "KuroTutor",
-  "version": "0.7.3",
+  "version": "0.8.0",
   "workspace": "data/workspaces",
   "data_dir": "data",
   "channel": {

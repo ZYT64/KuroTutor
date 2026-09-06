@@ -36,6 +36,31 @@ _MAX_RETRIES = 2
 class _RetryableStatus(Exception):
     """流式路径遇到 429/5xx 的内部标记，交给 ``complete`` 重试循环统一退避。"""
 
+    def __init__(self, cause: str, fix: str = "稍后重试，或检查模型配额/余额"):
+        super().__init__(cause)
+        self.fix = fix
+
+
+def _rate_limit_detail(body: str) -> tuple[str, str]:
+    """从 429/5xx 响应体提取厂商错误信息，返回 (原因片段, 修复建议)。
+
+    识别厂商错误码：GLM 1113「余额不足」等持久性错误给出明确的充值指引，
+    与瞬时限流区分开（学生侧话术与日志都能看清根因）。
+    """
+    detail = (body or "").strip()
+    msg = ""
+    try:
+        data = json.loads(detail)
+        if isinstance(data, dict):
+            err = data.get("error")
+            msg = str(err.get("message") or "") if isinstance(err, dict) else str(data)[:200]
+    except ValueError:
+        msg = detail[:200]
+    cause = f"{msg or '无响应体'}（原始: {(detail or '空')[:150]}）"
+    if "1113" in detail or "余额不足" in detail:
+        return cause, "模型账户余额不足或资源包用尽，请充值后重试"
+    return cause, "稍后重试，或检查模型配额/余额"
+
 
 @dataclass
 class ToolCall:
@@ -173,10 +198,11 @@ class OpenAICompatProvider(LLMProvider):
                     return await self._complete_streaming(url, body)
                 resp = await self._client.post(url, json=body)
                 if resp.status_code == 429 or resp.status_code >= 500:
+                    cause, fix = _rate_limit_detail(resp.text)
                     last_err = ProviderError(
                         "模型服务暂时不可用",
-                        cause=f"HTTP {resp.status_code}",
-                        fix="稍后重试，或检查模型配额/余额",
+                        cause=f"HTTP {resp.status_code}；{cause}",
+                        fix=fix,
                     )
                     if attempt < _MAX_RETRIES:
                         await self._sleep_backoff(attempt)
@@ -194,7 +220,7 @@ class OpenAICompatProvider(LLMProvider):
                 last_err = ProviderError(
                     "模型服务暂时不可用",
                     cause=str(exc),
-                    fix="稍后重试，或检查模型配额/余额",
+                    fix=exc.fix,
                 )
                 if attempt < _MAX_RETRIES:
                     await self._sleep_backoff(attempt)
@@ -231,7 +257,9 @@ class OpenAICompatProvider(LLMProvider):
         usage: dict[str, Any] = {}
         async with self._client.stream("POST", url, json=stream_body) as resp:
             if resp.status_code == 429 or resp.status_code >= 500:
-                raise _RetryableStatus(f"HTTP {resp.status_code}")
+                body_text = (await resp.aread()).decode("utf-8", errors="replace")
+                cause, fix = _rate_limit_detail(body_text)
+                raise _RetryableStatus(f"HTTP {resp.status_code}；{cause}", fix=fix)
             if resp.status_code != 200:
                 text = (await resp.aread()).decode("utf-8", errors="replace")
                 raise ProviderError(

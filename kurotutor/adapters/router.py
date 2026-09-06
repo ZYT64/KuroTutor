@@ -66,7 +66,14 @@ class Router:
         )
 
         if not response.ok:
-            return [OutboundMessage(text=response.error or response.text, priority=Priority.P0)]
+            # 给学生的是老师口吻的话术（response.text）；技术错误详情只进日志
+            log_event(log, "agent failed", student_id=student_id, error=response.error)
+            return [
+                OutboundMessage(
+                    text=response.text or "老师这边出了点问题，请稍后再试。",
+                    priority=Priority.P0,
+                )
+            ]
 
         outbound = self._to_outbound(response.text, student_id=student_id)
         media = list(getattr(response, "media", []) or [])

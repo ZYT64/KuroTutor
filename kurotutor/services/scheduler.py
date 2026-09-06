@@ -102,7 +102,13 @@ def process_due(
             count += 1
         except Exception as exc:  # 单个任务失败不阻塞
             log_event(log, "task failed", level="error", task_id=task.id, kind=task.kind, error=repr(exc))
-            _set_status(engine, task.id, TaskStatus.FAILED)
+            # 瞬时失败（限流/网络/模型抖动）自动重试：顺延 10 分钟、最多 3 次
+            retries = _schedule_retry(engine, task)
+            if retries <= _MAX_RETRIES:
+                log_event(log, "task retry scheduled", task_id=task.id, kind=task.kind,
+                          retry=retries, delay_minutes=_RETRY_DELAY_MINUTES)
+            else:
+                _set_status(engine, task.id, TaskStatus.FAILED)
     return count
 
 
@@ -128,4 +134,30 @@ def _set_status(engine: Any, task_id: int, status: str) -> None:
             return
         task.status = status
         task.last_run_at = datetime.now(UTC)
-        db.add(task)
+
+
+# 瞬时失败自动重试：顺延间隔与最大次数（payload["_retry"] 记已重试次数）
+_MAX_RETRIES = 3
+_RETRY_DELAY_MINUTES = 10
+
+
+def _schedule_retry(engine: Any, task: ScheduleTask) -> int:
+    """把失败任务顺延重试；返回本次重试序号（1 起）。改写 payload 的 _retry 计数。"""
+    import contextlib
+    import json
+    from datetime import timedelta
+
+    payload: dict = {}
+    with contextlib.suppress(ValueError, TypeError):
+        payload = json.loads(task.payload or "{}") or {}
+    retries = int(payload.get("_retry") or 0) + 1
+    payload["_retry"] = retries
+    with session_scope(engine) as db:
+        t = db.get(ScheduleTask, task.id)
+        if t is None:
+            return retries
+        t.status = TaskStatus.PENDING
+        t.fire_at = datetime.now(UTC) + timedelta(minutes=_RETRY_DELAY_MINUTES)
+        t.last_run_at = datetime.now(UTC)
+        t.payload = json.dumps(payload, ensure_ascii=False)
+    return retries

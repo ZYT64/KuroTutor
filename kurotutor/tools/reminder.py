@@ -58,6 +58,16 @@ def _parse_time(raw: str) -> datetime:
     )
 
 
+def _to_local(dt: datetime) -> datetime:
+    """DB 读回的时间（SQLite 丢失时区）按 UTC 解释后转本地时区显示。
+
+    naive 直接 ``astimezone()`` 会被当作本地时间，导致显示偏差（14:22 显示成 06:22）。
+    """
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt.astimezone()
+
+
 async def set_reminder(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     """设一条提醒。参数：time（如 30分钟后 / 2026-09-07T15:00）、text（提醒内容）。"""
     if ctx.student is None:
@@ -101,7 +111,7 @@ async def reminder_list(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         return "现在没有待触发的提醒。"
     lines = []
     for i, t in enumerate(rows, 1):
-        local = t.fire_at.astimezone()
+        local = _to_local(t.fire_at)
         msg = ""
         with contextlib.suppress(ValueError, TypeError):
             import json
@@ -127,4 +137,4 @@ async def reminder_cancel(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
         ok = scheduler.cancel_task(ctx.engine, task_id)
     if not ok:
         return "取消失败，这条提醒可能已经触发过了。"
-    return f"已取消：{t.fire_at.astimezone():%m月%d日 %H:%M} 的提醒。"
+    return f"已取消：{_to_local(t.fire_at):%m月%d日 %H:%M} 的提醒。"

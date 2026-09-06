@@ -94,3 +94,16 @@ def test_parse_time_naive_iso_uses_local_clock():
     got = _parse_time("2099-01-01T15:00")
     # 无时区 ISO 按本地钟表时间解释：换算回 UTC 后 + 偏移应还原 15:00
     assert (got + local).strftime("%H:%M") == "15:00"
+
+
+def test_to_local_fixes_naive_utc(config, engine):
+    """DB 读回的 naive 时间按 UTC 补时区再转本地（防 14:22 显示成 06:22）。"""
+    import time as _t
+
+    from kurotutor.tools.reminder import _to_local
+
+    offset = datetime.fromtimestamp(_t.time()).astimezone().utcoffset() or timedelta()
+    naive = datetime(2099, 1, 1, 6, 22)  # 存储 06:22 UTC
+    got = _to_local(naive)
+    assert got.utcoffset() is not None
+    assert got.strftime("%H:%M") == (naive + offset).strftime("%H:%M")
