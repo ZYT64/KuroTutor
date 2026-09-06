@@ -181,3 +181,28 @@ def test_imgprep_preprocess_missing_file_returns_original(tmp_path):
 
     missing = str(tmp_path / "nope.png")
     assert preprocess_image(missing, str(tmp_path)) == missing
+
+
+def test_docx_inline_markdown_rendered_not_literal(config, engine, tmp_path):
+    """行内 markdown（**粗**、*斜*、~~删~~、`代码`）转成 Word 真格式，原始符号不残留。"""
+    import docx
+
+    from kurotutor.services.docs import write_document
+
+    path = str(tmp_path / "inline.docx")
+    write_document(
+        path,
+        "# 标题\n\n## 节\n\n- **加粗要点**：普通说明\n- *斜体* 与 ~~删除线~~ 与 `code` 混排\n"
+        "> 引用一句\n\n未配对 ** 符号也要清洗\n### 小节标题\n",
+    )
+    d = docx.Document(path)
+    full = "\n".join(p.text for p in d.paragraphs)
+    # 任何 markdown 原始符号都不应出现在文档文本里
+    for bad in ("**", "~~", "`", "###"):
+        assert bad not in full, f"残留 markdown 符号: {bad}"
+    texts = [p.text for p in d.paragraphs]
+    assert "加粗要点：普通说明" in texts
+    bolds = [r.text for p in d.paragraphs for r in p.runs if r.bold]
+    italics = [r.text for p in d.paragraphs for r in p.runs if r.italic]
+    assert any("加粗要点" in b for b in bolds)
+    assert any("斜体" in b for b in italics)

@@ -118,7 +118,42 @@ def _read_pdf(p: Path, max_chars: int) -> str:
 
 
 # ---- 写（轻量标记 → 文档） ----------------------------------------------------
-# 标记规则：`# ` 大标题；`## ` 节标题（pptx 中为新一页幻灯片标题）；`- ` 列表项；普通行 = 段落。
+# 标记规则：`# ` 大标题；`## ` 节标题（pptx 中为新一页幻灯片标题）；`### ` 小节；
+# `- ` 列表项；`> ` 引用；`**粗**` `*斜*` `~~删~~` `` `代码` `` 行内格式；普通行 = 段落。
+# 行内未配对的 markdown 符号一律清洗，绝不允许原始标记符号出现在文档里。
+
+
+# 行内标记 → (文本, 样式)；样式 ∈ bold / italic / strike / code / ""
+_INLINE_RE = re.compile(r"(\*\*.+?\*\*|\*[^*\n]+?\*|~~.+?~~|`[^`\n]+?`)", re.S)
+# 未配对残留的 markdown 符号（清洗用）
+_LEFTOVER_RE = re.compile(r"\*{1,3}|~~{1,2}|`{1,3}|^#{1,6}\s*(?=\S)")
+
+
+def _inline_runs(text: str) -> list[tuple[str, str]]:
+    """把行内 markdown 解析为 (文本, 样式) 列表；未配对符号直接清洗掉。"""
+    runs: list[tuple[str, str]] = []
+    pos = 0
+    for m in _INLINE_RE.finditer(text):
+        if m.start() > pos:
+            runs.append((_LEFTOVER_RE.sub("", text[pos : m.start()]), ""))
+        token = m.group(0)
+        if token.startswith("**"):
+            runs.append((token[2:-2], "bold"))
+        elif token.startswith("~~"):
+            runs.append((token[2:-2], "strike"))
+        elif token.startswith("`"):
+            runs.append((token[1:-1], "code"))
+        else:
+            runs.append((token[1:-1], "italic"))
+        pos = m.end()
+    if pos < len(text):
+        runs.append((_LEFTOVER_RE.sub("", text[pos:]), ""))
+    return [(t, s) for t, s in runs if t]
+
+
+def _strip_inline(text: str) -> str:
+    """剥掉行内格式符号只留纯文本（PDF 等不支持富文本的通道用）。"""
+    return "".join(t for t, _ in _inline_runs(text))
 
 
 def write_document(out_path: str, content: str) -> str:
@@ -141,50 +176,86 @@ def write_document(out_path: str, content: str) -> str:
 
 
 def _parse_markup(content: str) -> list[tuple[str, str]]:
-    """解析轻量标记 → [(kind, text)]，kind ∈ title / section / bullet / para / image。"""
+    """解析轻量标记 → [(kind, text)]，kind ∈ title/section/subsection/bullet/quote/para/image。"""
     blocks: list[tuple[str, str]] = []
     for raw in (content or "").splitlines():
         line = raw.rstrip()
         if not line.strip():
             continue
-        m = re.match(r"^!\[[^\]]*\]\(([^)]+)\)\s*$", line.strip())
+        stripped = line.strip()
+        m = re.match(r"^!\[[^\]]*\]\(([^)]+)\)\s*$", stripped)
         if m:
             blocks.append(("image", m.group(1).strip()))
-        elif line.startswith("# "):
-            blocks.append(("title", line[2:].strip()))
+        elif line.startswith("### "):
+            blocks.append(("subsection", line[4:].strip()))
         elif line.startswith("## "):
             blocks.append(("section", line[3:].strip()))
+        elif line.startswith("# "):
+            blocks.append(("title", line[2:].strip()))
         elif line.startswith("- ") or line.startswith("• "):
             blocks.append(("bullet", line[2:].strip()))
+        elif stripped.startswith("> "):
+            blocks.append(("quote", stripped[2:].strip()))
+        elif stripped.startswith("#"):
+            # 兜底：#、####、##### 等非常规层级也当标题，符号不残留
+            blocks.append(("subsection", stripped.lstrip("#").strip()))
         else:
-            blocks.append(("para", line.strip()))
+            blocks.append(("para", stripped))
     return blocks
 
 
 def _write_docx(out: Path, blocks: list[tuple[str, str]]) -> str:
     import docx
-    from docx.shared import Inches
+    from docx.enum.text import WD_COLOR_INDEX
+    from docx.shared import Inches, RGBColor
 
     d = docx.Document()
+
+    def _add_runs(par, text: str) -> None:
+        for seg, style in _inline_runs(text):
+            run = par.add_run(seg)
+            if style == "bold":
+                run.bold = True
+            elif style == "italic":
+                run.italic = True
+            elif style == "strike":
+                run.font.strike = True
+            elif style == "code":
+                run.font.name = "Consolas"
+                run.font.highlight_color = WD_COLOR_INDEX.GRAY_25
+
     for kind, text in blocks:
         if kind == "title":
-            d.add_heading(text, level=0 if text == blocks[0][1] else 1)
+            h = d.add_heading("", level=0 if text == blocks[0][1] else 1)
+            _add_runs(h, text)
         elif kind == "section":
-            d.add_heading(text, level=2)
+            h = d.add_heading("", level=2)
+            _add_runs(h, text)
+        elif kind == "subsection":
+            h = d.add_heading("", level=3)
+            _add_runs(h, text)
         elif kind == "bullet":
-            d.add_paragraph(text, style="List Bullet")
+            p = d.add_paragraph(style="List Bullet")
+            _add_runs(p, text)
+        elif kind == "quote":
+            p = d.add_paragraph()
+            p.paragraph_format.left_indent = Inches(0.3)
+            _add_runs(p, text)
+            for run in p.runs:
+                run.italic = True
+                run.font.color.rgb = RGBColor(0x60, 0x60, 0x60)
         elif kind == "image":
             if Path(text).exists():
                 d.add_picture(text, width=Inches(5.8))
         else:
-            d.add_paragraph(text)
+            p = d.add_paragraph()
+            _add_runs(p, text)
     d.save(str(out))
     return str(out)
 
 
 def _write_pptx(out: Path, blocks: list[tuple[str, str]]) -> str:
     from pptx import Presentation
-    from pptx.util import Pt as PPt
 
     prs = Presentation()
     slide = None
@@ -199,6 +270,21 @@ def _write_pptx(out: Path, blocks: list[tuple[str, str]]) -> str:
 
     first_title = next((t for k, t in blocks if k == "title"), "演示文稿")
     _new_slide(first_title)
+
+    def _fill_runs(par, text: str, *, size: int) -> None:
+        from pptx.util import Pt as _Pt2
+
+        for seg, style in _inline_runs(text):
+            run = par.add_run()
+            run.text = seg
+            run.font.size = _Pt2(size)
+            if style == "bold":
+                run.font.bold = True
+            elif style == "italic":
+                run.font.italic = True
+            elif style == "strike":
+                run.font._rPr.set("strike", "sngStrike")
+
     for kind, text in blocks:
         if kind == "title" and text != first_title:
             _new_slide(text)
@@ -211,8 +297,8 @@ def _write_pptx(out: Path, blocks: list[tuple[str, str]]) -> str:
             continue
         last = body.paragraphs[-1]
         para = last if not last.text and not last.runs else body.add_paragraph()
-        para.text = ("• " + text) if kind == "bullet" else text
-        para.font.size = PPt(16)
+        body_text = ("• " + text) if kind == "bullet" else text
+        _fill_runs(para, body_text, size=16)
     prs.save(str(out))
     return str(out)
 
@@ -236,6 +322,8 @@ def _write_pdf(out: Path, blocks: list[tuple[str, str]]) -> str:
         return re.findall(rf".{{1,{per}}}", text)
 
     for kind, text in blocks:
+        if kind != "image":
+            text = _strip_inline(text)  # PDF 无富文本，行内标记剥为纯文本
         if kind == "title":
             _ensure(34)
             page.insert_text((MARGIN, y + 14), text, fontname=_PDF_FONT, fontsize=16)

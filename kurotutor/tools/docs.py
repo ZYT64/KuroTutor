@@ -37,7 +37,9 @@ async def doc_read(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
 async def doc_write(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
     """生成文档（.docx/.pptx/.pdf）。参数：path（输出路径，后缀定格式）、content（轻量标记）。
 
-    标记规则：`# ` 大标题；`## ` 节标题（pptx 中为新一页）；`- ` 列表项；普通行为段落。
+    标记规则：`# ` 大标题；`## ` 节标题（pptx 中为新一页）；`### ` 小节；`- ` 列表项；
+    `> ` 引用；`**粗**` `*斜*` `~~删~~` `` `代码` `` 行内格式；普通行为段落。
+    内容务必简洁：要点式短句，直击重点，学生时间是第一成本；不支持表格，用列表表达。
     """
     path = (kwargs.get("path") or "").strip()
     content = kwargs.get("content")
