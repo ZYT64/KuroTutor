@@ -51,6 +51,10 @@ class QQBotpyChannel(ChannelAdapter):
         self._router = Router(config, registry, engine)
         self._workspace = config.workspace
         self._client: Any = None
+        # botpy 客户端运行所在的 worker 线程事件循环（其 aiohttp session 绑定于此）；
+        # 调度器/主动推送跑在主 loop，跨线程调用必须转发回这个 loop，否则报
+        # 「Timeout context manager should be used inside a task」
+        self._bot_loop: asyncio.AbstractEventLoop | None = None
         # 被动回复去重：同一 msg_id 多次回复需递增 msg_seq（官方消息去重规则）
         self._msg_seq: dict[str, int] = {}
         # 并发控制：跨学生并行处理、同学生保持顺序（锁）；信号量限制同时在算的消息数
@@ -69,6 +73,40 @@ class QQBotpyChannel(ChannelAdapter):
             for k in list(self._msg_seq)[: 100]:
                 self._msg_seq.pop(k, None)
         return n
+
+    async def _call_bot(self, coro_factory: Any, *, timeout: float = 60.0) -> Any:
+        """在 botpy 客户端自己的事件循环里执行协程（跨线程安全）。
+
+        botpy 的 aiohttp session 绑定在 worker 线程的 loop 上：被动回复恰好
+        在该 loop 内直接执行；调度器/主动推送等来自主 loop 的调用必须用
+        ``run_coroutine_threadsafe`` 转发，否则 aiohttp 报
+        「Timeout context manager should be used inside a task」。
+        ``coro_factory``：无参函数，返回新建协程（便于重试/降级时重建）。
+        """
+        factory = coro_factory
+        coro = factory()
+        bot_loop = self._bot_loop
+        try:
+            running = asyncio.get_running_loop()
+        except RuntimeError:
+            running = None
+        if bot_loop is not None and bot_loop.is_running() and bot_loop is not running:
+            fut = asyncio.run_coroutine_threadsafe(coro, bot_loop)
+            return await asyncio.wait_for(asyncio.wrap_future(fut), timeout=timeout)
+        return await coro
+
+    @property
+    def safe_http(self) -> Any:
+        """跨线程安全的 botpy HTTP 代理（供 upload_c2c_file 等复用 http.request 协议）。"""
+        channel = self
+
+        class _ThreadSafeHttp:
+            async def request(self, route: Any, **kwargs: Any) -> Any:
+                return await channel._call_bot(
+                    lambda: channel._client.http.request(route, **kwargs), timeout=120.0
+                )
+
+        return _ThreadSafeHttp()
 
     def _make_client(self):
         """构造 botpy 客户端（懒导入，未装 SDK 时抛可读错误）。"""
@@ -107,7 +145,9 @@ class QQBotpyChannel(ChannelAdapter):
         # 因此在 worker 线程内构建并运行 client，避免跨线程 loop 问题。
         def _run() -> None:
             # 3.12 下线程无 current loop，botpy 需要；先设一个再运行
-            asyncio.set_event_loop(asyncio.new_event_loop())
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._bot_loop = loop
             client = self._make_client()
             self._client = client
             client.run(appid=app_id, secret=secret)
@@ -260,20 +300,20 @@ class QQBotpyChannel(ChannelAdapter):
 
         # 优先 markdown：msg_type=2，markdown.content 放正文（顶层 content 留空）
         try:
-            await self._client.http.request(
+            await self._call_bot(lambda: self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid),
                 json={"msg_type": 2, "msg_id": msg_id, "msg_seq": self._next_seq(msg_id),
                       "markdown": {"content": content}},
-            )
+            ))
             return
         except Exception:
             pass  # markdown 不可用（未开通权限等）→ 兜底纯文本
         try:
-            await self._client.http.request(
+            await self._call_bot(lambda: self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid),
                 json={"msg_type": 0, "msg_id": msg_id, "msg_seq": self._next_seq(msg_id),
                       "content": content},
-            )
+            ))
         except Exception as exc:
             log_event(log, "qq reply failed", level="warning", error=str(exc))
 
@@ -288,14 +328,14 @@ class QQBotpyChannel(ChannelAdapter):
         from botpy.http import Route
 
         try:
-            await self._client.http.request(
+            await self._call_bot(lambda: self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid),
                 json={
                     "msg_type": 6,
                     "msg_id": msg_id,
                     "input_notify": {"input_type": 1, "input_second": seconds},
                 },
-            )
+            ))
         except Exception as exc:
             log_event(log, "typing notify failed", level="warning", error=str(exc))
 
@@ -353,7 +393,7 @@ class QQBotpyChannel(ChannelAdapter):
         from botpy.http import Route
 
         try:
-            file_info = await upload_c2c_file(self._client.http, openid, file_path, file_type)
+            file_info = await upload_c2c_file(self.safe_http, openid, file_path, file_type)
         except Exception as exc:
             log_event(log, "reply media upload failed", level="warning",
                       file=Path(file_path).name, error=repr(exc))
@@ -363,9 +403,9 @@ class QQBotpyChannel(ChannelAdapter):
             body["msg_id"] = msg_id
             body["msg_seq"] = self._next_seq(msg_id)
         try:
-            await self._client.http.request(
+            await self._call_bot(lambda: self._client.http.request(
                 Route("POST", "/v2/users/{openid}/messages", openid=openid), json=body,
-            )
+            ))
             log_event(log, "reply media sent", file=Path(file_path).name,
                       mode="passive" if msg_id else "active")
             return True
@@ -374,7 +414,7 @@ class QQBotpyChannel(ChannelAdapter):
                       file=Path(file_path).name, error=repr(exc), had_msg_id=bool(msg_id))
         # 降级：重新上传并 srv_send_msg=true 直发（主动消息，一步完成）
         try:
-            if await direct_send_c2c_file(self._client.http, openid, file_path, file_type):
+            if await direct_send_c2c_file(self.safe_http, openid, file_path, file_type):
                 log_event(log, "reply media sent (direct)", file=Path(file_path).name)
                 return True
         except Exception as exc:
@@ -404,11 +444,11 @@ class QQBotpyChannel(ChannelAdapter):
                     out.text = (out.text + f"\n📎 讲义文件「{Path(out.lecture_path).name}」生成好了，"
                                 "但这条通道暂时发不了文件，需要的话说一声我用别的方式给你。").strip()
             if out.text:
-                await self._client.http.request(
+                await self._call_bot(lambda: self._client.http.request(
                     Route("POST", "/v2/users/{openid}/messages", openid=student_external_id),
                     json={"content": out.text[:2000], "msg_type": 0, "msg_id": "",
                           "msg_seq": self._next_seq("")},
-                )
+                ))
                 log_event(log, "qq proactive push sent", student=student_external_id)
         except Exception as exc:
             log_event(log, "qq proactive push failed", level="warning",
