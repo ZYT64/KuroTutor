@@ -103,8 +103,11 @@ async def solve_photo(ctx: ToolContext, kwargs: dict[str, Any]) -> str:
 
     sol = _parse_solution(raw)
     if not sol:
-        # 优雅降级：不解析出结构化数据，就直接把原始识别结果返回（不误写库）
-        return raw or "视觉模型未能读出图片内容，请换一张更清晰的图片重试。"
+        # 优雅降级：不解析出结构化数据，就把原始识别结果返回（不误写库）
+        return raw or (
+            "视觉模型没有返回内容（服务侧问题，不是图片问题）。"
+            "告诉学生：我这边识别服务刚才临时出问题了，过几分钟把同一张图再发我一次就好，不用重拍。"
+        )
 
     subject = _text(sol.get("subject")) or "综合"
     question_type = _text(sol.get("question_type")) or "未分类"

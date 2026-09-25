@@ -29,6 +29,26 @@ _TIMEOUT = httpx.Timeout(connect=10.0, read=180.0, write=60.0, pool=10.0)
 _MAX_RETRIES = 2
 
 
+def _rate_limit_detail(body: str) -> tuple[str, str]:
+    """从 429/5xx 响应体提取厂商错误信息，返回 (原因片段, 修复建议)。
+
+    与 llm.py 同样处理：余额类错误（如 GLM 1113）给出明确指引，与瞬时限流区分。
+    """
+    detail = (body or "").strip()
+    msg = ""
+    try:
+        data = json.loads(detail)
+        if isinstance(data, dict):
+            err = data.get("error")
+            msg = str(err.get("message") or "") if isinstance(err, dict) else str(data)[:200]
+    except ValueError:
+        msg = detail[:200]
+    cause = f"{msg or '无响应体'}（原始: {(detail or '空')[:150]}）"
+    if "1113" in detail or "余额不足" in detail:
+        return cause, "模型账户余额不足或资源包用尽，请充值后重试"
+    return cause, "稍后重试，或检查模型配额/余额"
+
+
 def extract_json(text: str) -> dict[str, Any]:
     """从视觉模型输出里提取第一个 JSON 对象；失败返回空 dict。"""
     if not text:
@@ -133,13 +153,17 @@ class OpenAICompatVisionProvider(VisionProvider):
             try:
                 resp = await self._client.post(url, json=body)
                 if resp.status_code == 429 or resp.status_code >= 500:
+                    cause, fix = _rate_limit_detail(resp.text)
                     last_err = ProviderError(
                         "视觉服务暂时不可用",
-                        cause=f"HTTP {resp.status_code}",
-                        fix="稍后重试，或检查模型配额/余额",
+                        cause=f"HTTP {resp.status_code}；{cause}",
+                        fix=fix,
                     )
                     if attempt < _MAX_RETRIES:
-                        await self._sleep_backoff(attempt)
+                        # 限流窗口通常以分钟计，短退避跨不过去；429 用长退避
+                        import asyncio as _aio
+
+                        await _aio.sleep(2.0 * (4**attempt))
                         continue
                     raise last_err
                 if resp.status_code != 200:
@@ -148,7 +172,16 @@ class OpenAICompatVisionProvider(VisionProvider):
                         cause=f"HTTP {resp.status_code}: {resp.text[:200]}",
                         fix="检查 models.vision 配置（provider/model/base_url/api_key）",
                     )
-                return self._parse(resp.json())
+                result = self._parse(resp.json())
+                if not result:
+                    # 空结果必须显式失败：让上层说「服务没读出内容」，
+                    # 而不是拿着空字符串去编造图片内容
+                    raise ProviderError(
+                        "视觉服务返回了空结果",
+                        cause="模型没有返回任何文字内容",
+                        fix="稍后把同一张图再发一次；多次为空再检查 models.vision 模型名",
+                    )
+                return result
             except (httpx.RequestError, httpx.TimeoutException) as exc:
                 last_err = ProviderError("无法连接视觉服务", cause=str(exc), fix="检查网络与 base_url 可达性")
                 if attempt < _MAX_RETRIES:
